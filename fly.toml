@@ -1,0 +1,49 @@
+app = "traductionimpact3"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  auto_stop_machines = true
+  auto_start_machines = true
+
+  processes = ["app"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  [services.http_checks]
+    interval = "10s"
+    grace_period = "5s"
+    method = "get"
+    path = "/"
+    protocol = "http"
+    timeout = "2s"
+    tls_skip_verify = false
+
+  [services.ports]
+    handlers = ["http"]
+    port = 80
+
+  [services.ports.tls]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [services.tcp_checks]
+    interval = "15s"
+    timeout = "2s"
+
+[resources]
+  cpu = 1
+  memory = 1024
+  disk = 50
+
+[mounts]
+  source = "data_volume_breed"
+  destination = "/data"
+
+

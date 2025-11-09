@@ -1,0 +1,9 @@
+<button onclick="startMic()">Test microfoon</button>
+<script>
+async function startMic() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const audio = new Audio();
+  audio.srcObject = stream;
+  audio.play();
+}
+</script>

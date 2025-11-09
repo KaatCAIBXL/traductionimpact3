@@ -1,0 +1,57 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.ogg
+*.mp4
+*.mov
+*.rar
+*.7z
+
+# Virtuele omgevingen
+venv/
+env/
+
+# IDE-bestanden
+*.idea/
+*.vscode/
+*.swp
+
+# Systeembestanden
+.DS_Store
+Thumbs.db
+
+# Gevoelige bestanden
+.env
+
+# Media en tijdelijke bestanden
+*.wav
+*.mp3
+*.dll
+temp_live_audio.wav
+tts_audio.mp3
+wintun.dll
+
+# Documentatie of instructies
+*instructies_correctie
+*instructies_Tshiluba
+
+.git
+*.log
+*.csv
+*.tsv
+*.xlsx
+*.pdf
+*.docx
+*.pptx
+*.zip
+*.tar
+*.gz
+
+node_modules/
+.gitignore
+fly.toml
+*.sqlite3
+*.db
+

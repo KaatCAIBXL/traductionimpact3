@@ -1,0 +1,11 @@
+openai
+deepl
+python-dotenv
+flask
+flask-cors
+requests
+edge-tts
+SpeechRecognition
+pygame
+openai-whisper
+
