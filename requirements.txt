@@ -8,4 +8,5 @@ edge-tts
 SpeechRecognition
 pygame
 openai-whisper
+pydub
 
