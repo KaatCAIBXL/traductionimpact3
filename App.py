@@ -1,4 +1,3 @@
-
 from flask_cors import CORS
 from flask import Flask, request, jsonify, send_from_directory, send_file, after_this_request
 import tempfile, os, threading, asyncio, textwrap
@@ -7,11 +6,10 @@ import deepl
 from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import datetime
+
 from pydub import AudioSegment, silence
 from pydub.effects import normalize, low_pass_filter
 import edge_tts
-from pydub import AudioSegment
-
 
 
 # --------------------------------this is for an app configuration and the needed apikeys
@@ -178,7 +176,6 @@ def map_vertaling_taalcode_deepl(taalcode):
         return code.upper()
 
 #----------------------------------------------------audiobestand omvormen
-from pydub import AudioSegment
 
 def convert_to_wav(input_path):
     sound = AudioSegment.from_file(input_path)
@@ -291,4 +288,5 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
