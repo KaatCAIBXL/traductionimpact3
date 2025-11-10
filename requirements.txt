@@ -9,4 +9,6 @@ SpeechRecognition
 pygame
 openai-whisper
 pydub
+gunicorn
+
 
