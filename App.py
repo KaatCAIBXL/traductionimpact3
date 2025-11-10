@@ -13,7 +13,7 @@ import edge_tts
 
 
 # --------------------------------this is for an app configuration and the needed apikeys
-app = Flask("traductionimpact3", static_folder="static")
+app = Flask("traductionimpact3")
 CORS(app)
 load_dotenv()
 
@@ -32,7 +32,7 @@ ENKEL_TEKST_MODUS = False
 # ---------------------------------------------------------------------home page
 @app.route("/")
 def index():
-    return send_from_directory(app.static_folder, "index.html")
+    return send_from_directory("index.html")
 
 #--------------------------------------------------------------------corrected sentences
 def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
@@ -288,5 +288,6 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
