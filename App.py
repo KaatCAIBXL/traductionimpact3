@@ -10,6 +10,7 @@ from datetime import datetime
 from pydub import AudioSegment, silence
 from pydub.effects import normalize, low_pass_filter
 import edge_tts
+import os
 
 
 # --------------------------------this is for an app configuration and the needed apikeys
@@ -30,9 +31,11 @@ ENKEL_TEKST_MODUS = False
 
 
 # ---------------------------------------------------------------------home page
+
 @app.route("/")
 def index():
-    return send_from_directory("index.html")
+    return send_from_directory(os.getcwd(), "index.html")
+
 
 #--------------------------------------------------------------------corrected sentences
 def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
@@ -288,6 +291,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
