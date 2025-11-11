@@ -1,3 +1,4 @@
+
 from flask_cors import CORS
 from flask import Flask, request, jsonify, send_from_directory, send_file, after_this_request
 import tempfile, os, threading, asyncio, textwrap
@@ -10,7 +11,7 @@ from datetime import datetime
 from pydub import AudioSegment, silence
 from pydub.effects import normalize, low_pass_filter
 import edge_tts
-import os
+
 
 
 # --------------------------------this is for an app configuration and the needed apikeys
@@ -35,6 +36,10 @@ ENKEL_TEKST_MODUS = False
 @app.route("/")
 def index():
     return send_from_directory("frontend", "index.html")
+@app.route("/<path:path>")
+def static_files(path):
+    return send_from_directory("frontend", path)
+
 
 
 
@@ -181,6 +186,7 @@ def map_vertaling_taalcode_deepl(taalcode):
 
 #----------------------------------------------------audiobestand omvormen
 
+
 def convert_to_wav(input_path):
     sound = AudioSegment.from_file(input_path)
     wav_path = input_path.replace(".webm", ".wav")
@@ -203,7 +209,7 @@ def vertaal_audio():
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         audio_file.save(tmp.name)
-        audio_path = convert_to_wav(audio_path)
+        audio_path = convert_to_wav(tmp.name)
 
     try:
         # 🎧 Transcriptie via Whisper
@@ -292,9 +298,6 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
-
-
-
 
 
 
