@@ -27,8 +27,6 @@ async function setupAudioDetection(stream) {
   }, 200);
 }
 
-
-}
 async function spreekVertaling(text, lang) {
   const formData = new FormData();
   formData.append("text", text);
@@ -127,4 +125,5 @@ document.getElementById("start").onclick = async () => {
     document.getElementById("pause").innerText = "⏸️ pause ⏸️ ";
     isPaused = false;
   };
+
 </script>
