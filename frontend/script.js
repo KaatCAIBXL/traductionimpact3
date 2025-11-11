@@ -1,4 +1,4 @@
-<script>
+
 navigator.mediaDevices.getUserMedia({ audio: true })
   .then(() => console.log("Asked acces for microphone"))
   .catch(err => console.error("Error microphone:", err));
@@ -126,4 +126,4 @@ document.getElementById("start").onclick = async () => {
     isPaused = false;
   };
 
-</script>
+
