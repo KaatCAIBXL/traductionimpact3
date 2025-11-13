@@ -131,11 +131,11 @@ def transcribe_audio():
                 model="whisper-1", file=af, language=taalcode
             )
 
-        tekst = transcript_response.text.strip()
-        corrected = corrigeer_zin_met_context(tekst, context_zinnen)
-        context_zinnen.append(corrected)
-
-        return jsonify({"original": tekst, "corrected": corrected})
+        tekst = transcript_response.text.strip()␊
+        corrected = corrigeer_zin_met_context(tekst, context_zinnen)␊
+        context_zinnen.append(corrected)␊
+␊
+        return jsonify({"recognized": tekst, "corrected": corrected})
 
     except Exception as e:
         return jsonify({"error": f"Fout bij transcriptie: {str(e)}"}), 500
@@ -323,6 +323,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
