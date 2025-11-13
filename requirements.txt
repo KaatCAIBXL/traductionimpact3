@@ -10,5 +10,4 @@ pygame
 openai-whisper
 pydub
 gunicorn
-
-
+numpy
