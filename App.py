@@ -1,6 +1,6 @@
-
 from flask_cors import CORS
 from flask import Flask, request, jsonify, send_from_directory, send_file, after_this_request
+import mimetypes
 import tempfile, os, threading, asyncio, textwrap
 from openai import OpenAI
 import deepl
@@ -220,6 +220,21 @@ def convert_to_wav(input_path):
     return wav_path
 
 
+def _determine_temp_suffix(audio_file):
+    """Bepaal de best passende extensie voor het tijdelijke bestand."""
+    filename = getattr(audio_file, "filename", "") or ""
+    _, ext = os.path.splitext(filename)
+    if ext:
+        return ext
+
+    mimetype = getattr(audio_file, "mimetype", "") or ""
+    guessed = mimetypes.guess_extension(mimetype)
+    if guessed:
+        return guessed
+
+    return ".webm"
+
+
 # -------------------- HOOFDROUTE --------------------
 @app.route("/api/translate", methods=["POST"])
 def vertaal_audio():
@@ -235,20 +250,27 @@ def vertaal_audio():
 
     temp_input_path = None
     audio_path = None
+    converted_path = None
 
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        suffix = _determine_temp_suffix(audio_file)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             audio_file.save(tmp.name)
             temp_input_path = tmp.name
 
-        try:
-            audio_path = convert_to_wav(temp_input_path)
-        except CouldntDecodeError as e:
-            print(f"[!] Kon audio niet decoderen: {e}")
-            return jsonify({"error": "Kon audiobestand niet lezen. Controleer de opname en zorg dat ffmpeg beschikbaar is."}), 400
-        except Exception as e:
-            print(f"[!] Fout bij converteren naar wav: {e}")
-            return jsonify({"error": f"Kon audio niet converteren: {str(e)}"}), 400
+        audio_path = temp_input_path
+
+        if not suffix.lower().endswith(".wav"):
+            try:
+                converted_path = convert_to_wav(temp_input_path)
+                audio_path = converted_path
+            except CouldntDecodeError as e:
+                print(f"[!] Kon audio niet decoderen (ffmpeg ontbreekt?). Gebruik origineel bestand: {e}")
+                audio_path = temp_input_path
+            except Exception as e:
+                print(f"[!] Fout bij converteren naar wav: {e}")
+                return jsonify({"error": f"Kon audio niet converteren: {str(e)}"}), 400
 
         # 🎧 Transcriptie via Whisper
         with open(audio_path, "rb") as af:
@@ -331,8 +353,8 @@ def vertaal_audio():
         return jsonify({"error": str(e)}), 500
 
     finally:
-        if audio_path and os.path.exists(audio_path):
-            os.remove(audio_path)
+        if converted_path and os.path.exists(converted_path):
+            os.remove(converted_path)
         if temp_input_path and os.path.exists(temp_input_path):
             os.remove(temp_input_path)
 #-------------------------------------------------------einde document
@@ -344,6 +366,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
