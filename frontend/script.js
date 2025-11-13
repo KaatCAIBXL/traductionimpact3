@@ -10,6 +10,7 @@ console.log("✅ Nieuw script.js geladen (cross-browser compatible)");
 // ======================================================
 let mediaRecorder;
 let bufferChunks = [];
+let bufferedDurationMs = 0;
 let isSpeaking = false;
 let noiseFloorRms = 0.005;
 
@@ -31,6 +32,10 @@ const textOnlyCheckbox = document.getElementById("textOnly");
 const sourceLanguageSelect = document.getElementById("sourceLanguage");
 const targetLanguageSelect = document.getElementById("languageSelect");
 let micStatusState = "idle";
+
+const CHUNK_INTERVAL_MS = 1500;
+const SILENCE_FLUSH_MS = 1200;
+const MAX_BUFFER_MS = 6000;
 
 function escapeHtml(text) {
   const replacements = {
@@ -250,6 +255,7 @@ if (startButton) {
     }
     releaseAudioResources();
     bufferChunks = [];
+    bufferedDurationMs = 0;
     isSpeaking = false;
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -270,43 +276,53 @@ if (startButton) {
       const options = getRecorderOptions();
       mediaRecorder = new MediaRecorder(stream, options);
 
-      mediaRecorder.start(5000); // elke 5 sec fragment
+      mediaRecorder.start(CHUNK_INTERVAL_MS); // kortere fragmenten voor snellere transcriptie
 
       mediaRecorder.ondataavailable = async (event) => {
         const now = Date.now();
         const stilte = now - lastSpeechTime;
 
-        if (stilte < 3000) {
+        if (event.data && event.data.size) {
           bufferChunks.push(event.data);
-        } else if (bufferChunks.length > 0) {
-          const blob = new Blob(bufferChunks, { type: event.data.type });
-          bufferChunks = [];
+          bufferedDurationMs += CHUNK_INTERVAL_MS;
+        }
 
-          const formData = new FormData();
-          formData.append("audio", blob, "spraak." + event.data.type.split("/")[1]);
-          formData.append("from", sourceLanguageSelect.value);
-          formData.append("to", targetLanguageSelect.value);
-          formData.append("textOnly", textOnlyCheckbox.checked ? "true" : "false");
+        const shouldFlush =
+          bufferChunks.length > 0 &&
+          (stilte >= SILENCE_FLUSH_MS || bufferedDurationMs >= MAX_BUFFER_MS);
 
-          const unsupportedByDeepL = [
-            "sw", "am", "mg", "lingala", "kikongo",
-            "tshiluba", "baloué", "dioula"
-          ];
+        if (!shouldFlush) {
+          return;
+        }
 
-          if (unsupportedByDeepL.includes(targetLanguageSelect.value)) {
-            alert("⚠️ This language isn't supported by DeepL. AI will translate instead.");
-          }
+        const blob = new Blob(bufferChunks, { type: event.data.type || "audio/webm" });
+        bufferChunks = [];
+        bufferedDurationMs = 0;
 
-          const response = await fetch("/api/translate", { method: "POST", body: formData });
-          const data = await response.json();
+        const formData = new FormData();
+        formData.append("audio", blob, "spraak." + (event.data.type?.split("/")[1] || "webm"));
+        formData.append("from", sourceLanguageSelect.value);
+        formData.append("to", targetLanguageSelect.value);
+        formData.append("textOnly", textOnlyCheckbox.checked ? "true" : "false");
 
-          document.getElementById("transcript").innerHTML += `<p>${data.original}</p>`;
-          document.getElementById("orig").innerHTML       += `<p>${data.original}</p>`;
-          document.getElementById("trans").innerHTML      += `<p>${data.translation}</p>`;
+        const unsupportedByDeepL = [
+          "sw", "am", "mg", "lingala", "kikongo",
+          "tshiluba", "baloué", "dioula"
+        ];
 
-          if (!textOnlyCheckbox.checked) {
-            spreekVertaling(data.translation, targetLanguageSelect.value);
-          }
+        if (unsupportedByDeepL.includes(targetLanguageSelect.value)) {
+          alert("⚠️ This language isn't supported by DeepL. AI will translate instead.");
+        }
+
+        const response = await fetch("/api/translate", { method: "POST", body: formData });
+        const data = await response.json();
+
+        document.getElementById("transcript").innerHTML += `<p>${data.original}</p>`;
+        document.getElementById("orig").innerHTML       += `<p>${data.original}</p>`;
+        document.getElementById("trans").innerHTML      += `<p>${data.translation}</p>`;
+
+        if (!textOnlyCheckbox.checked) {
+          spreekVertaling(data.translation, targetLanguageSelect.value);
         }
       };
 
@@ -382,6 +398,7 @@ if (stopButton) {
     isPaused = false;
     noiseFloorRms = 0.005;
     bufferChunks = [];
+    bufferedDurationMs = 0;
     isSpeaking = false;
     setMicStatus("idle");
   };
