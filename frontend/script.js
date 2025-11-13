@@ -20,8 +20,16 @@ let lastSpeechTime = Date.now();
 
 let isPaused = false;
 let intervalId = null;
+let activeStream = null;
+let previousSpeakingState = false;
 
 const micStatusElement = document.getElementById("micStatus");
+const startButton = document.getElementById("start");
+const pauseButton = document.getElementById("pause");
+const stopButton = document.getElementById("stop");
+const textOnlyCheckbox = document.getElementById("textOnly");
+const sourceLanguageSelect = document.getElementById("sourceLanguage");
+const targetLanguageSelect = document.getElementById("languageSelect");
 let micStatusState = "idle";
 
 function escapeHtml(text) {
@@ -85,11 +93,57 @@ function setMicStatus(state, detail = "") {
 
 setMicStatus("idle");
 
+function stopActiveStream() {
+  if (activeStream) {
+    activeStream.getTracks().forEach((track) => track.stop());
+    activeStream = null;
+  }
+}
+
+function releaseAudioResources() {
+  if (intervalId) {
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+
+  if (audioContext && typeof audioContext.close === "function") {
+    audioContext.close().catch(() => {});
+  }
+
+  audioContext = null;
+  analyser = null;
+  source = null;
+  previousSpeakingState = false;
+  stopActiveStream();
+}
+
+if (micStatusElement && startButton) {
+  micStatusElement.addEventListener("click", () => {
+    if (!startButton.disabled) {
+      startButton.click();
+    }
+  });
+
+  micStatusElement.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!startButton.disabled) {
+        startButton.click();
+      }
+    }
+  });
+}
+
 
 // ======================================================
 //  SPREKEN-DETECTIE
 // ======================================================
 async function setupAudioDetection(stream) {
+  setMicStatus("calibrating");
+  previousSpeakingState = false;
+  noiseFloorRms = 0.005;
+  lastSpeechTime = Date.now();
+
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   source = audioContext.createMediaStreamSource(stream);
   analyser = audioContext.createAnalyser();
@@ -99,6 +153,8 @@ async function setupAudioDetection(stream) {
 
   const floatTimeData = new Float32Array(analyser.fftSize);
   const byteTimeData = new Uint8Array(analyser.fftSize);
+  const calibrationStart = Date.now();
+  let calibrationDone = false;
 
   intervalId = setInterval(() => {
     let sumSquares = 0;
@@ -127,6 +183,21 @@ async function setupAudioDetection(stream) {
     } else {
       noiseFloorRms = Math.max(0.001, noiseFloorRms * 0.95 + rms * 0.05);
     }
+
+    if (!calibrationDone && Date.now() - calibrationStart > 1200) {
+      calibrationDone = true;
+      setMicStatus("listening");
+    }
+
+    if (calibrationDone) {
+      if (isSpeaking && !previousSpeakingState) {
+        setMicStatus("speaking");
+      } else if (!isSpeaking && previousSpeakingState) {
+        setMicStatus("listening");
+      }
+    }
+
+    previousSpeakingState = isSpeaking;
   }, 150);
 }
 
@@ -172,117 +243,146 @@ function getRecorderOptions() {
 // ======================================================
 //  START KNOP
 // ======================================================
-document.getElementById("start").onclick = async () => {
-  if (intervalId) {
-    clearInterval(intervalId);
-    intervalId = null;
-  }
+if (startButton) {
+  startButton.onclick = async () => {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
+    releaseAudioResources();
+    bufferChunks = [];
+    isSpeaking = false;
 
-  bufferChunks = [];
-  isSpeaking = false;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const message = "Browser ondersteunt geen microfoon opname.";
+      alert("❌ " + message);
+      setMicStatus("error", message);
+      return;
+    }
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    try {
+      setMicStatus("calibrating");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      activeStream = stream;
 
-    console.log("🎙️ Microfoon toestemming OK");
-    await setupAudioDetection(stream);
+      console.log("🎙️ Microfoon toestemming OK");
+      await setupAudioDetection(stream);
 
-    const options = getRecorderOptions();
-    mediaRecorder = new MediaRecorder(stream, options);
+      const options = getRecorderOptions();
+      mediaRecorder = new MediaRecorder(stream, options);
 
-    mediaRecorder.start(5000); // elke 5 sec fragment
+      mediaRecorder.start(5000); // elke 5 sec fragment
 
-    mediaRecorder.ondataavailable = async (event) => {␊
-      const now = Date.now();␊
-      const stilte = now - lastSpeechTime;␊
-␊
-      if (stilte < 3000) {␊
-        bufferChunks.push(event.data);
-      } else if (bufferChunks.length > 0) {
-        const blob = new Blob(bufferChunks, { type: event.data.type });
-        bufferChunks = [];
+      mediaRecorder.ondataavailable = async (event) => {
+        const now = Date.now();
+        const stilte = now - lastSpeechTime;
 
-        const formData = new FormData();
-        formData.append("audio", blob, "spraak." + event.data.type.split("/")[1]);
-        formData.append("from", document.getElementById("sourceLanguage").value);
-        formData.append("to", document.getElementById("languageSelect").value);
-        formData.append(
-          "textOnly",
-          document.getElementById("textOnly").checked ? "true" : "false"
-        );
+        if (stilte < 3000) {
+          bufferChunks.push(event.data);
+        } else if (bufferChunks.length > 0) {
+          const blob = new Blob(bufferChunks, { type: event.data.type });
+          bufferChunks = [];
 
-        const unsupportedByDeepL = [
-          "sw", "am", "mg", "lingala", "kikongo",
-          "tshiluba", "baloué", "dioula"
-        ];
+          const formData = new FormData();
+          formData.append("audio", blob, "spraak." + event.data.type.split("/")[1]);
+          formData.append("from", sourceLanguageSelect.value);
+          formData.append("to", targetLanguageSelect.value);
+          formData.append("textOnly", textOnlyCheckbox.checked ? "true" : "false");
 
-        if (unsupportedByDeepL.includes(document.getElementById("languageSelect").value)) {
-          alert("⚠️ This language isn't supported by DeepL. AI will translate instead.");
+          const unsupportedByDeepL = [
+            "sw", "am", "mg", "lingala", "kikongo",
+            "tshiluba", "baloué", "dioula"
+          ];
+
+          if (unsupportedByDeepL.includes(targetLanguageSelect.value)) {
+            alert("⚠️ This language isn't supported by DeepL. AI will translate instead.");
+          }
+
+          const response = await fetch("/api/translate", { method: "POST", body: formData });
+          const data = await response.json();
+
+          document.getElementById("transcript").innerHTML += `<p>${data.original}</p>`;
+          document.getElementById("orig").innerHTML       += `<p>${data.original}</p>`;
+          document.getElementById("trans").innerHTML      += `<p>${data.translation}</p>`;
+
+          if (!textOnlyCheckbox.checked) {
+            spreekVertaling(data.translation, targetLanguageSelect.value);
+          }
         }
+      };
 
-        const response = await fetch("/api/translate", { method: "POST", body: formData });
-        const data = await response.json();
+      mediaRecorder.addEventListener("stop", () => {
+        releaseAudioResources();
+        mediaRecorder = null;
+      });
 
-        document.getElementById("transcript").innerHTML += `<p>${data.original}</p>`;
-        document.getElementById("orig").innerHTML       += `<p>${data.original}</p>`;
-        document.getElementById("trans").innerHTML      += `<p>${data.translation}</p>`;
-
-        if (!document.getElementById("textOnly").checked) {
-          spreekVertaling(data.translation, document.getElementById("languageSelect").value);
+      mediaRecorder.addEventListener("error", (event) => {
+        console.error("Recorder error", event.error);
+        setMicStatus("error", event.error?.message || "Recorder error");
+        releaseAudioResources();
+        if (startButton) startButton.disabled = false;
+        if (pauseButton) {
+          pauseButton.disabled = true;
+          pauseButton.innerText = "⏸️ pause ⏸️";
         }
-      }
-    };
+        if (stopButton) stopButton.disabled = true;
+      });
 
-    // Knoppen togglen
-    document.getElementById("start").disabled = true;
-    document.getElementById("pause").disabled = false;
-    document.getElementById("stop").disabled = false;
-  
+      // Knoppen togglen
+      startButton.disabled = true;
+      if (pauseButton) pauseButton.disabled = false;
+      if (stopButton) stopButton.disabled = false;
     } catch (err) {
       alert("❌ Microfoon werkt niet: " + err.message);
       console.error("Microfoonfout:", err);
       setMicStatus("error", err.message || "");
+      releaseAudioResources();
     }
   };
+}
 
 
 // ======================================================
 //  PAUSE KNOP
 // ======================================================
-document.getElementById("pause").onclick = () => {
-  if (!mediaRecorder) return;
+if (pauseButton) {
+  pauseButton.onclick = () => {
+    if (!mediaRecorder) return;
 
-  if (!isPaused && mediaRecorder.state === "recording") {
-    mediaRecorder.pause();
-    isPaused = true;
-    document.getElementById("pause").innerText = "▶️ continue ▶️";
-  } else {
-    mediaRecorder.resume();
-    isPaused = false;
-    document.getElementById("pause").innerText = "⏸️ pause ⏸️";
-  }
-};
+    if (!isPaused && mediaRecorder.state === "recording") {
+      mediaRecorder.pause();
+      isPaused = true;
+      pauseButton.innerText = "▶️ continue ▶️";
+    } else if (mediaRecorder.state === "paused") {
+      mediaRecorder.resume();
+      isPaused = false;
+      pauseButton.innerText = "⏸️ pause ⏸️";
+    }
+  };
+}
 
 
 // ======================================================
 //  STOP KNOP
 // ======================================================
-document.getElementById("stop").onclick = () => {
-  clearInterval(intervalId);
-  intervalId = null;
+if (stopButton) {
+  stopButton.onclick = () => {
+    releaseAudioResources();
 
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    mediaRecorder.stop();
-  }
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
 
-  document.getElementById("start").disabled = false;
-  document.getElementById("pause").disabled = true;
-  document.getElementById("stop").disabled = true;
-  document.getElementById("pause").innerText = "⏸️ pause ⏸️ ";
+    if (startButton) startButton.disabled = false;
+    if (pauseButton) {
+      pauseButton.disabled = true;
+      pauseButton.innerText = "⏸️ pause ⏸️";
+    }
+    stopButton.disabled = true;
 
-  isPaused = false;
-  noiseFloorRms = 0.005;
-  bufferChunks = [];
-  isSpeaking = false;
-  setMicStatus("idle");
-};
+    isPaused = false;
+    noiseFloorRms = 0.005;
+    bufferChunks = [];
+    isSpeaking = false;
+    setMicStatus("idle");
+  };
+}
