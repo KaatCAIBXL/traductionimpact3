@@ -185,14 +185,11 @@ def map_vertaling_taalcode_deepl(taalcode):
         return code.upper()
 
 #----------------------------------------------------audiobestand omvormen
-
-
 def convert_to_wav(input_path):
-    sound = AudioSegment.from_file(input_path)
-    wav_path = input_path.replace(".webm", ".wav")
+    sound = AudioSegment.from_file(input_path)   # herkent mp4, webm, wav, etc.
+    wav_path = input_path + ".wav"
     sound.export(wav_path, format="wav")
     return wav_path
-
 
 # -------------------- HOOFDROUTE --------------------
 @app.route("/api/translate", methods=["POST"])
@@ -298,6 +295,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
