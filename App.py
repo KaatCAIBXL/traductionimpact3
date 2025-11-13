@@ -221,16 +221,25 @@ def convert_to_wav(input_path):
 
 
 def _determine_temp_suffix(audio_file):
-    """Bepaal de best passende extensie voor het tijdelijke bestand."""
-    filename = getattr(audio_file, "filename", "") or ""
-    _, ext = os.path.splitext(filename)
-    if ext:
-        return ext
+    """Bepaal een veilige extensie voor het tijdelijke bestand."""
 
-    filename = getattr(audio_file, "filename", "") or ""
+    allowed_ext = {
+        ".webm",
+        ".wav",
+        ".mp3",
+        ".mp4",
+        ".m4a",
+        ".ogg",
+        ".opus",
+        ".flac",
+        ".aac",
+        ".3gp",
+        ".3g2",
+    }
+
+    filename = (getattr(audio_file, "filename", "") or "").split(";")[0].strip()
     _, ext = os.path.splitext(filename)
-    ext = (ext.split(";")[0].strip() if ext else ext)
-    if ext:
+    if ext and ext.lower() in allowed_ext:
         return ext
 
     mimetype = (getattr(audio_file, "mimetype", "") or "").split(";")[0].strip()
@@ -249,13 +258,14 @@ def _determine_temp_suffix(audio_file):
         "audio/x-m4a": ".m4a",
         "audio/3gpp": ".3gp",
         "audio/3gpp2": ".3g2",
+        "audio/ogg; codecs=opus": ".ogg",
     }
 
     if mimetype in mimetype_map:
         return mimetype_map[mimetype]
 
     guessed = mimetypes.guess_extension(mimetype) if mimetype else None
-    if guessed:
+    if guessed and guessed.lower() in allowed_ext:
         return guessed
 
     return ".webm"
@@ -392,6 +402,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
