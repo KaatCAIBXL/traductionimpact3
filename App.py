@@ -305,7 +305,13 @@ def vertaal_audio():
         ).start()
 
         # 🔁 Antwoord naar frontend
-        return jsonify({"original": verbeterde_zin, "translation": vertaling})
+        return jsonify(
+            {
+                "recognized": tekst,
+                "corrected": verbeterde_zin,
+                "translation": vertaling,
+            }
+        )
 
     except Exception as e:
         print(f"[!] Onverwachte fout: {e}")
@@ -323,6 +329,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
