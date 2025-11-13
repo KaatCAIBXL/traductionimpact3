@@ -233,10 +233,32 @@ def _determine_temp_suffix(audio_file):
     if ext:
         return ext
 
-    mimetype = getattr(audio_file, "mimetype", "") or ""
-    guessed = mimetypes.guess_extension(mimetype.split(";")[0].strip() if mimetype else mimetype)
+    mimetype = (getattr(audio_file, "mimetype", "") or "").split(";")[0].strip()
+
+    mimetype_map = {
+        "audio/webm": ".webm",
+        "video/webm": ".webm",
+        "audio/ogg": ".ogg",
+        "video/ogg": ".ogg",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/mp4": ".mp4",
+        "video/mp4": ".mp4",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/x-m4a": ".m4a",
+        "audio/3gpp": ".3gp",
+        "audio/3gpp2": ".3g2",
+    }
+
+    if mimetype in mimetype_map:
+        return mimetype_map[mimetype]
+
+    guessed = mimetypes.guess_extension(mimetype) if mimetype else None
     if guessed:
         return guessed
+
+    return ".webm"
 
 
 # -------------------- HOOFDROUTE --------------------
@@ -370,6 +392,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
