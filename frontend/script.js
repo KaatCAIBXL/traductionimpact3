@@ -324,12 +324,18 @@ if (startButton) {
           return;
         }
 
-        const blob = new Blob(bufferChunks, { type: event.data.type || "audio/webm" });
+        const rawMimeType = event.data.type || "audio/webm";
+        const cleanMimeType = rawMimeType.split(";")[0].trim() || "audio/webm";
+        const blob = new Blob(bufferChunks, { type: cleanMimeType });
         bufferChunks = [];
         bufferedDurationMs = 0;
 
+        const extension = cleanMimeType.includes("/")
+          ? cleanMimeType.split("/")[1].trim() || "webm"
+          : "webm";
+
         const formData = new FormData();
-        formData.append("audio", blob, "spraak." + (event.data.type?.split("/")[1] || "webm"));
+        formData.append("audio", blob, `spraak.${extension}`);
         formData.append("from", sourceLanguageSelect.value);
         formData.append("to", targetLanguageSelect.value);
         formData.append("textOnly", textOnlyCheckbox.checked ? "true" : "false");
@@ -472,3 +478,4 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
