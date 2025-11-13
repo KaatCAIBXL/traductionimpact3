@@ -245,7 +245,7 @@ def vertaal_audio():
         tekst = transcript_response.text.strip()
         if not tekst:
             return jsonify({"error": "Geen spraak gedetecteerd."}), 400
-␊
+
         # ✍️ Contextuele correctie
         verbeterde_zin = corrigeer_zin_met_context(tekst, vorige_zinnen)
         vorige_zinnen.append(verbeterde_zin)
@@ -329,6 +329,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
