@@ -330,7 +330,7 @@ def vertaal_audio():
         print(f"[!] Onverwachte fout: {e}")
         return jsonify({"error": str(e)}), 500
 
-     finally:
+    finally:
         if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
         if temp_input_path and os.path.exists(temp_input_path):
@@ -344,6 +344,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
