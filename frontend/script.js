@@ -13,7 +13,6 @@ let bufferChunks = [];
 let isSpeaking = false;
 let noiseFloorRms = 0.005;
 
-
 let audioContext;
 let analyser;
 let source;
@@ -21,6 +20,70 @@ let lastSpeechTime = Date.now();
 
 let isPaused = false;
 let intervalId = null;
+
+const micStatusElement = document.getElementById("micStatus");
+let micStatusState = "idle";
+
+function escapeHtml(text) {
+  const replacements = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  };
+
+  return String(text).replace(/[&<>"']/g, (char) => replacements[char] || char);
+}
+
+function setMicStatus(state, detail = "") {
+  if (!micStatusElement) return;
+
+  let label = "🎙️ Microphone idle";
+  let fallbackDetail = "Press start to begin calibration";
+
+  if (state === "calibrating") {
+    label = "🎚️ Calibrating ambient noise…";
+    fallbackDetail = "Stay silent for a moment";
+  } else if (state === "listening") {
+    label = "👂 Listening";
+    fallbackDetail = "Waiting for speech";
+  } else if (state === "speaking") {
+    label = "🗣️ Speech detected";
+    fallbackDetail = "";
+  } else if (state === "error") {
+    label = "❌ Microphone unavailable";
+    fallbackDetail = "Grant microphone access and try again";
+  }
+
+  const detailText = detail || fallbackDetail;
+
+  if (
+    state === micStatusState &&
+    micStatusElement.dataset.detail === detailText
+  ) {
+    return;
+  }
+
+  micStatusElement.classList.remove(
+    "idle",
+    "calibrating",
+    "listening",
+    "speaking",
+    "error"
+  );
+
+  micStatusElement.classList.add(state);
+  micStatusState = state;
+  micStatusElement.dataset.detail = detailText;
+
+  const safeDetail = detailText ? escapeHtml(detailText) : "";
+  micStatusElement.innerHTML = detailText
+    ? `${label}<small>${safeDetail}</small>`
+    : label;
+}
+
+setMicStatus("idle");
 
 
 // ======================================================
@@ -110,6 +173,14 @@ function getRecorderOptions() {
 //  START KNOP
 // ======================================================
 document.getElementById("start").onclick = async () => {
+  if (intervalId) {
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+
+  bufferChunks = [];
+  isSpeaking = false;
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -121,11 +192,11 @@ document.getElementById("start").onclick = async () => {
 
     mediaRecorder.start(5000); // elke 5 sec fragment
 
-    mediaRecorder.ondataavailable = async (event) => {
-      const now = Date.now();
-      const stilte = now - lastSpeechTime;
-
-      if (stilte < 3000) {
+    mediaRecorder.ondataavailable = async (event) => {␊
+      const now = Date.now();␊
+      const stilte = now - lastSpeechTime;␊
+␊
+      if (stilte < 3000) {␊
         bufferChunks.push(event.data);
       } else if (bufferChunks.length > 0) {
         const blob = new Blob(bufferChunks, { type: event.data.type });
@@ -166,12 +237,13 @@ document.getElementById("start").onclick = async () => {
     document.getElementById("start").disabled = true;
     document.getElementById("pause").disabled = false;
     document.getElementById("stop").disabled = false;
-
-  } catch (err) {
-    alert("❌ Microfoon werkt niet: " + err.message);
-    console.error("Microfoonfout:", err);
-  }
-};
+  
+    } catch (err) {
+      alert("❌ Microfoon werkt niet: " + err.message);
+      console.error("Microfoonfout:", err);
+      setMicStatus("error", err.message || "");
+    }
+  };
 
 
 // ======================================================
@@ -197,6 +269,7 @@ document.getElementById("pause").onclick = () => {
 // ======================================================
 document.getElementById("stop").onclick = () => {
   clearInterval(intervalId);
+  intervalId = null;
 
   if (mediaRecorder && mediaRecorder.state !== "inactive") {
     mediaRecorder.stop();
@@ -208,5 +281,8 @@ document.getElementById("stop").onclick = () => {
   document.getElementById("pause").innerText = "⏸️ pause ⏸️ ";
 
   isPaused = false;
+  noiseFloorRms = 0.005;
+  bufferChunks = [];
+  isSpeaking = false;
+  setMicStatus("idle");
 };
-
