@@ -11,6 +11,8 @@ console.log("✅ Nieuw script.js geladen (cross-browser compatible)");
 let mediaRecorder;
 let bufferChunks = [];
 let isSpeaking = false;
+let noiseFloorRms = 0.005;
+
 
 let audioContext;
 let analyser;
@@ -28,20 +30,41 @@ async function setupAudioDetection(stream) {
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   source = audioContext.createMediaStreamSource(stream);
   analyser = audioContext.createAnalyser();
-  analyser.fftSize = 512;
+  analyser.fftSize = 1024;
+  analyser.smoothingTimeConstant = 0.6;
   source.connect(analyser);
 
-  const dataArray = new Uint8Array(analyser.frequencyBinCount);
+  const floatTimeData = new Float32Array(analyser.fftSize);
+  const byteTimeData = new Uint8Array(analyser.fftSize);
 
   intervalId = setInterval(() => {
-    analyser.getByteFrequencyData(dataArray);
-    const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
-    isSpeaking = volume > 10;
+    let sumSquares = 0;
+
+    if (typeof analyser.getFloatTimeDomainData === "function") {
+      analyser.getFloatTimeDomainData(floatTimeData);
+      for (let i = 0; i < floatTimeData.length; i++) {
+        const sample = floatTimeData[i];
+        sumSquares += sample * sample;
+      }
+    } else {
+      analyser.getByteTimeDomainData(byteTimeData);
+      for (let i = 0; i < byteTimeData.length; i++) {
+        const centeredSample = (byteTimeData[i] - 128) / 128;
+        sumSquares += centeredSample * centeredSample;
+      }
+    }
+
+    const rms = Math.sqrt(sumSquares / analyser.fftSize);
+
+    const silenceThreshold = Math.max(noiseFloorRms * 1.8, 0.006);
+    isSpeaking = rms > silenceThreshold;
 
     if (isSpeaking) {
       lastSpeechTime = Date.now();
+    } else {
+      noiseFloorRms = Math.max(0.001, noiseFloorRms * 0.95 + rms * 0.05);
     }
-  }, 200);
+  }, 150);
 }
 
 
@@ -186,3 +209,4 @@ document.getElementById("stop").onclick = () => {
 
   isPaused = false;
 };
+
