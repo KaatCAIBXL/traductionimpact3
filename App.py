@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 
 from pydub import AudioSegment, silence
+from pydub.exceptions import CouldntDecodeError
 from pydub.effects import normalize, low_pass_filter
 import edge_tts
 
@@ -232,11 +233,23 @@ def vertaal_audio():
     doel_taal = request.form.get("to", "nl").lower()
     enkel_tekst = request.form.get("textOnly", "false") == "true"
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        audio_file.save(tmp.name)
-        audio_path = convert_to_wav(tmp.name)
+     temp_input_path = None
+    audio_path = None
 
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            audio_file.save(tmp.name)
+            temp_input_path = tmp.name
+
+        try:
+            audio_path = convert_to_wav(temp_input_path)
+        except CouldntDecodeError as e:
+            print(f"[!] Kon audio niet decoderen: {e}")
+            return jsonify({"error": "Kon audiobestand niet lezen. Controleer de opname en zorg dat ffmpeg beschikbaar is."}), 400
+        except Exception as e:
+            print(f"[!] Fout bij converteren naar wav: {e}")
+            return jsonify({"error": f"Kon audio niet converteren: {str(e)}"}), 400
+
         # 🎧 Transcriptie via Whisper
         with open(audio_path, "rb") as af:
             transcript_response = openai_client.audio.transcriptions.create(
@@ -317,9 +330,11 @@ def vertaal_audio():
         print(f"[!] Onverwachte fout: {e}")
         return jsonify({"error": str(e)}), 500
 
-    finally:
-        if os.path.exists(audio_path):
+     finally:
+        if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
+        if temp_input_path and os.path.exists(temp_input_path):
+            os.remove(temp_input_path)
 #-------------------------------------------------------einde document
 @app.route("/resultaat")
 def resultaat():
@@ -329,6 +344,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
