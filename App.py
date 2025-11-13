@@ -145,6 +145,18 @@ def transcribe_audio():
 
 #-------------------------------------------------------------text -> speech
 # 🔊 TTS via edge_tts
+def _select_stem(taalcode: str) -> str:
+    return STEMMAP.get(taalcode.lower(), DEFAULT_STEM)
+
+
+def _generate_tts_file(tekst: str, taalcode: str) -> str:
+    stem = _select_stem(taalcode)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+        pad = tmp.name
+    asyncio.run(edge_tts.Communicate(tekst, stem).save(pad))
+    return pad
+
+
 @app.route("/api/speak", methods=["POST"])
 def spreek():
     tekst = request.form.get("text")
@@ -154,40 +166,8 @@ def spreek():
     if not spreek_uit or not tekst:
         return jsonify({"error": "Geen tekst om uit te spreken"}), 400
 
-    stemmap = {
-        "nl": "nl-NL-ColetteNeural",
-        "fr": "fr-FR-DeniseNeural",
-        "en": "en-US-AriaNeural",
-        "de": "de-DE-KatjaNeural",
-        "es": "es-ES-ElviraNeural",
-        "pt": "pt-BR-FranciscaNeural",
-        "fi": "fi-FI-SelmaNeural",
-        "sv": "sv-SE-SofieNeural",
-        "no": "nb-NO-PernilleNeural",
-        "pl": "pl-PL-AgnieszkaNeural",
-        "ru": "ru-RU-SvetlanaNeural",
-        "tr": "tr-TR-EmelNeural",
-        "ja": "ja-JP-NanamiNeural",
-        "zh": "zh-CN-XiaoxiaoNeural",
-        "ar": "ar-EG-SalmaNeural",
-        "hi": "hi-IN-SwaraNeural",
-        "id": "id-ID-GadisNeural",
-        "ms": "ms-MY-YasminNeural",
-        "sw": "sw-KE-ZuriNeural",
-        "am": "am-ET-MekdesNeural",
-        "lingala": "sw-KE-ZuriNeural",  # vervangstem
-        "tshiluba": "sw-KE-ZuriNeural",  # vervangstem
-        "baloué": "sw-KE-ZuriNeural",  # vervansgtem
-        "kikongo": "sw-KE-ZuriNeural",  # vervansgtem
-        "malagasy": "sw-KE-ZuriNeural",  # vervansgtem
-        "dioula": "sw-KE-ZuriNeural",  # vervansgtem
-    }
-
-    stem = stemmap.get(taalcode.lower(), "en-US-AriaNeural")
-    mp3_bestand = "tts_audio.mp3"
-
     try:
-        asyncio.run(edge_tts.Communicate(tekst, stem).save(mp3_bestand))
+        mp3_bestand = _generate_tts_file(tekst, taalcode)
 
         @after_this_request
         def remove_file(response):
@@ -201,6 +181,23 @@ def spreek():
 
     except Exception as e:
         return jsonify({"error": f"Fout bij stemgeneratie: {str(e)}"}), 500
+
+
+def spreek_tekst_synchroon(tekst: str, taalcode: str, spreek_uit: bool = True) -> None:
+    if not spreek_uit or not tekst:
+        return
+
+    mp3_bestand = None
+    try:
+        mp3_bestand = _generate_tts_file(tekst, taalcode)
+    except Exception as e:
+        print(f"[!] Fout bij achtergrond-TTS: {e}")
+    finally:
+        if mp3_bestand and os.path.exists(mp3_bestand):
+            try:
+                os.remove(mp3_bestand)
+            except OSError as e:
+                print(f"[!] Kon tijdelijk TTS-bestand niet verwijderen: {e}")
 
 # 🔁 DeepL taalcode mapping
 def map_vertaling_taalcode_deepl(taalcode):
@@ -326,6 +323,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
