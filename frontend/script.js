@@ -1,4 +1,3 @@
-
 // ======================================================
 //  SCRIPT READY CHECK
 // ======================================================
@@ -31,11 +30,15 @@ const stopButton = document.getElementById("stop");
 const textOnlyCheckbox = document.getElementById("textOnly");
 const sourceLanguageSelect = document.getElementById("sourceLanguage");
 const targetLanguageSelect = document.getElementById("languageSelect");
+const recognizedContainer = document.getElementById("orig");
+const correctedContainer = document.getElementById("transcript");
+const translationContainer = document.getElementById("trans");
 let micStatusState = "idle";
 
 const CHUNK_INTERVAL_MS = 1500;
 const SILENCE_FLUSH_MS = 1200;
 const MAX_BUFFER_MS = 6000;
+let sessionSegments = [];
 
 function escapeHtml(text) {
   const replacements = {
@@ -97,6 +100,30 @@ function setMicStatus(state, detail = "") {
 }
 
 setMicStatus("idle");
+
+function renderLatestSegments() {
+  const recent = sessionSegments.slice(-2);
+
+  if (recognizedContainer) {
+    recognizedContainer.innerHTML = recent
+      .map((segment) => `<p>${escapeHtml(segment.recognized || "")}</p>`)
+      .join("");
+  }
+
+  if (correctedContainer) {
+    correctedContainer.innerHTML = recent
+      .map((segment) => `<p>${escapeHtml(segment.corrected || "")}</p>`)
+      .join("");
+  }
+
+  if (translationContainer) {
+    translationContainer.innerHTML = recent
+      .map((segment) => `<p>${escapeHtml(segment.translation || "")}</p>`)
+      .join("");
+  }
+}
+
+renderLatestSegments();
 
 function stopActiveStream() {
   if (activeStream) {
@@ -257,6 +284,8 @@ if (startButton) {
     bufferChunks = [];
     bufferedDurationMs = 0;
     isSpeaking = false;
+    sessionSegments = [];
+    renderLatestSegments();
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       const message = "Browser ondersteunt geen microfoon opname.";
@@ -317,12 +346,22 @@ if (startButton) {
         const response = await fetch("/api/translate", { method: "POST", body: formData });
         const data = await response.json();
 
-        document.getElementById("transcript").innerHTML += `<p>${data.original}</p>`;
-        document.getElementById("orig").innerHTML       += `<p>${data.original}</p>`;
-        document.getElementById("trans").innerHTML      += `<p>${data.translation}</p>`;
+        if (data.error) {
+          console.error("Vertaalfout:", data.error);
+          return;
+        }
 
-        if (!textOnlyCheckbox.checked) {
-          spreekVertaling(data.translation, targetLanguageSelect.value);
+        const segment = {
+          recognized: data.recognized || "",
+          corrected: data.corrected || data.recognized || "",
+          translation: data.translation || "",
+        };
+
+        sessionSegments.push(segment);
+        renderLatestSegments();
+
+        if (!textOnlyCheckbox.checked && segment.translation) {
+          spreekVertaling(segment.translation, targetLanguageSelect.value);
         }
       };
 
@@ -400,6 +439,36 @@ if (stopButton) {
     bufferChunks = [];
     bufferedDurationMs = 0;
     isSpeaking = false;
+    downloadSessionDocument();
     setMicStatus("idle");
   };
+}
+
+function downloadSessionDocument() {
+  if (!sessionSegments.length) {
+    return;
+  }
+
+  const parts = sessionSegments.map((segment, index) => {
+    const nummer = index + 1;
+    return [
+      `Deel ${nummer}`,
+      `Herkenning: ${segment.recognized || ""}`,
+      `Correctie: ${segment.corrected || ""}`,
+      `Vertaling: ${segment.translation || ""}`,
+    ].join("\n");
+  });
+
+  const content = parts.join("\n\n");
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `transcriptie-${new Date()
+    .toISOString()
+    .replace(/[:.]/g, "-")}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
