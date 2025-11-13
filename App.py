@@ -242,13 +242,13 @@ def vertaal_audio():
             transcript_response = openai_client.audio.transcriptions.create(
                 model="whisper-1", file=af, language=bron_taal
             )
-        tekst = transcript_response.text.strip()
-        if not tekst:
-            return jsonify({"error": "Geen spraak gedetecteerd."}), 400
-
-        # ✍️ Contextuele correctie
-        verbeterde_zin = corrigeer_zin_met_context(tekst, vorige_zinnen)
-        vorige_zinnen.append(verbeterde_zin)
+        tekst = transcript_response.text.strip()␊
+        if not tekst:␊
+            return jsonify({"error": "Geen spraak gedetecteerd."}), 400␊
+␊
+        # ✍️ Contextuele correctie␊
+        verbeterde_zin = corrigeer_zin_met_context(tekst, vorige_zinnen)␊
+        vorige_zinnen.append(verbeterde_zin)␊
 
         # 🌍 Vertaling
         deepl_supported = {
@@ -323,6 +323,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
