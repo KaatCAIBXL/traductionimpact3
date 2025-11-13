@@ -30,6 +30,36 @@ context_zinnen = []
 
 ENKEL_TEKST_MODUS = False
 
+DEFAULT_STEM = "en-US-AriaNeural"
+STEMMAP = {
+    "nl": "nl-NL-ColetteNeural",
+    "fr": "fr-FR-DeniseNeural",
+    "en": DEFAULT_STEM,
+    "de": "de-DE-KatjaNeural",
+    "es": "es-ES-ElviraNeural",
+    "pt": "pt-BR-FranciscaNeural",
+    "fi": "fi-FI-SelmaNeural",
+    "sv": "sv-SE-SofieNeural",
+    "no": "nb-NO-PernilleNeural",
+    "pl": "pl-PL-AgnieszkaNeural",
+    "ru": "ru-RU-SvetlanaNeural",
+    "tr": "tr-TR-EmelNeural",
+    "ja": "ja-JP-NanamiNeural",
+    "zh": "zh-CN-XiaoxiaoNeural",
+    "ar": "ar-EG-SalmaNeural",
+    "hi": "hi-IN-SwaraNeural",
+    "id": "id-ID-GadisNeural",
+    "ms": "ms-MY-YasminNeural",
+    "sw": "sw-KE-ZuriNeural",
+    "am": "am-ET-MekdesNeural",
+    "lingala": "sw-KE-ZuriNeural",
+    "tshiluba": "sw-KE-ZuriNeural",
+    "baloué": "sw-KE-ZuriNeural",
+    "kikongo": "sw-KE-ZuriNeural",
+    "malagasy": "sw-KE-ZuriNeural",
+    "dioula": "sw-KE-ZuriNeural",
+}
+
 
 # ---------------------------------------------------------------------home page
 
@@ -296,6 +326,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
