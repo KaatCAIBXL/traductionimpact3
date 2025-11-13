@@ -233,7 +233,7 @@ def vertaal_audio():
     doel_taal = request.form.get("to", "nl").lower()
     enkel_tekst = request.form.get("textOnly", "false") == "true"
 
-     temp_input_path = None
+    temp_input_path = None
     audio_path = None
 
     try:
@@ -344,6 +344,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
