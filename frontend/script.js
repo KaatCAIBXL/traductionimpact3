@@ -1,10 +1,13 @@
 
-// CONTROLEREN OF SCRIPT LAADT
-console.log("✅ script.js loaded");
+// ======================================================
+//  SCRIPT READY CHECK
+// ======================================================
+console.log("✅ Nieuw script.js geladen (cross-browser compatible)");
 
-// -----------------------------
-// VARIABELEN
-// -----------------------------
+
+// ======================================================
+//  VARIABELEN
+// ======================================================
 let mediaRecorder;
 let bufferChunks = [];
 let isSpeaking = false;
@@ -17,9 +20,10 @@ let lastSpeechTime = Date.now();
 let isPaused = false;
 let intervalId = null;
 
-// -----------------------------
-// SPREKEN DETECTIE
-// -----------------------------
+
+// ======================================================
+//  SPREKEN-DETECTIE
+// ======================================================
 async function setupAudioDetection(stream) {
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   source = audioContext.createMediaStreamSource(stream);
@@ -33,45 +37,66 @@ async function setupAudioDetection(stream) {
     analyser.getByteFrequencyData(dataArray);
     const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
     isSpeaking = volume > 10;
-    if (isSpeaking) lastSpeechTime = Date.now();
+
+    if (isSpeaking) {
+      lastSpeechTime = Date.now();
+    }
   }, 200);
 }
 
-// -----------------------------
-// TTS AFSPREKEN
-// -----------------------------
+
+// ======================================================
+//  TTS VIA BACKEND
+// ======================================================
 async function spreekVertaling(text, lang) {
   const formData = new FormData();
   formData.append("text", text);
   formData.append("lang", lang);
   formData.append("speak", "true");
 
-  const response = await fetch("/api/speak", {
-    method: "POST",
-    body: formData
-  });
-
+  const response = await fetch("/api/speak", { method: "POST", body: formData });
   const blob = await response.blob();
+
   const url = URL.createObjectURL(blob);
-  new Audio(url).play();
+  const audio = new Audio(url);
+  audio.play();
 }
 
-// -----------------------------
-// START KNOP
-// -----------------------------
+
+// ======================================================
+//  MEDIARECORDER — CROSS-BROWSER FALLBACK
+// ======================================================
+function getRecorderOptions() {
+  let options = { mimeType: "audio/webm;codecs=opus" };
+
+  if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+    console.warn("⚠️ webm/opus niet ondersteund → overschakelen naar mp4/aac");
+    options = { mimeType: "audio/mp4" };
+  }
+
+  if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+    console.warn("⚠️ mp4 niet ondersteund → browser kiest automatisch");
+    options = {};
+  }
+
+  return options;
+}
+
+
+// ======================================================
+//  START KNOP
+// ======================================================
 document.getElementById("start").onclick = async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    console.log("🎙️ Microfoon toegestaan");
 
+    console.log("🎙️ Microfoon toestemming OK");
     await setupAudioDetection(stream);
 
-    mediaRecorder = new MediaRecorder(stream, {
-      mimeType: "audio/webm;codecs=opus",
-      audioBitsPerSecond: 128000
-    });
+    const options = getRecorderOptions();
+    mediaRecorder = new MediaRecorder(stream, options);
 
-    mediaRecorder.start(5000);
+    mediaRecorder.start(5000); // elke 5 sec fragment
 
     mediaRecorder.ondataavailable = async (event) => {
       const now = Date.now();
@@ -80,11 +105,11 @@ document.getElementById("start").onclick = async () => {
       if (stilte < 3000) {
         bufferChunks.push(event.data);
       } else if (bufferChunks.length > 0) {
-        const blob = new Blob(bufferChunks, { type: "audio/webm" });
+        const blob = new Blob(bufferChunks, { type: event.data.type });
         bufferChunks = [];
 
         const formData = new FormData();
-        formData.append("audio", blob, "spraak.webm");
+        formData.append("audio", blob, "spraak." + event.data.type.split("/")[1]);
         formData.append("from", document.getElementById("sourceLanguage").value);
         formData.append("to", document.getElementById("languageSelect").value);
         formData.append(
@@ -98,14 +123,10 @@ document.getElementById("start").onclick = async () => {
         ];
 
         if (unsupportedByDeepL.includes(document.getElementById("languageSelect").value)) {
-          alert("This language isn't supported by Deepl and is translated by AI");
+          alert("⚠️ This language isn't supported by DeepL. AI will translate instead.");
         }
 
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          body: formData
-        });
-
+        const response = await fetch("/api/translate", { method: "POST", body: formData });
         const data = await response.json();
 
         document.getElementById("transcript").innerHTML += `<p>${data.original}</p>`;
@@ -118,19 +139,21 @@ document.getElementById("start").onclick = async () => {
       }
     };
 
+    // Knoppen togglen
     document.getElementById("start").disabled = true;
     document.getElementById("pause").disabled = false;
-    document.getElementById("stop").disabled  = false;
+    document.getElementById("stop").disabled = false;
 
   } catch (err) {
-    alert("Microfoon werkt niet: " + err.message);
+    alert("❌ Microfoon werkt niet: " + err.message);
     console.error("Microfoonfout:", err);
   }
 };
 
-// -----------------------------
-// PAUSE KNOP
-// -----------------------------
+
+// ======================================================
+//  PAUSE KNOP
+// ======================================================
 document.getElementById("pause").onclick = () => {
   if (!mediaRecorder) return;
 
@@ -138,16 +161,17 @@ document.getElementById("pause").onclick = () => {
     mediaRecorder.pause();
     isPaused = true;
     document.getElementById("pause").innerText = "▶️ continue ▶️";
-  } else if (isPaused && mediaRecorder.state === "paused") {
+  } else {
     mediaRecorder.resume();
     isPaused = false;
     document.getElementById("pause").innerText = "⏸️ pause ⏸️";
   }
 };
 
-// -----------------------------
-// STOP KNOP
-// -----------------------------
+
+// ======================================================
+//  STOP KNOP
+// ======================================================
 document.getElementById("stop").onclick = () => {
   clearInterval(intervalId);
 
@@ -157,8 +181,8 @@ document.getElementById("stop").onclick = () => {
 
   document.getElementById("start").disabled = false;
   document.getElementById("pause").disabled = true;
-  document.getElementById("stop").disabled  = true;
+  document.getElementById("stop").disabled = true;
+  document.getElementById("pause").innerText = "⏸️ pause ⏸️ ";
 
-  document.getElementById("pause").innerText = "⏸️ pause ⏸️";
   isPaused = false;
 };
