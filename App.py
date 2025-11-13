@@ -227,12 +227,16 @@ def _determine_temp_suffix(audio_file):
     if ext:
         return ext
 
+    filename = getattr(audio_file, "filename", "") or ""
+    _, ext = os.path.splitext(filename)
+    ext = (ext.split(";")[0].strip() if ext else ext)
+    if ext:
+        return ext
+
     mimetype = getattr(audio_file, "mimetype", "") or ""
-    guessed = mimetypes.guess_extension(mimetype)
+    guessed = mimetypes.guess_extension(mimetype.split(";")[0].strip() if mimetype else mimetype)
     if guessed:
         return guessed
-
-    return ".webm"
 
 
 # -------------------- HOOFDROUTE --------------------
@@ -366,6 +370,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
