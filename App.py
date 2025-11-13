@@ -191,6 +191,7 @@ def convert_to_wav(input_path):
     sound.export(wav_path, format="wav")
     return wav_path
 
+
 # -------------------- HOOFDROUTE --------------------
 @app.route("/api/translate", methods=["POST"])
 def vertaal_audio():
@@ -295,6 +296,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
