@@ -255,6 +255,15 @@ async function spreekVertaling(text, lang) {
 // ======================================================
 //  MEDIARECORDER — CROSS-BROWSER FALLBACK
 // ======================================================
+function sanitizeMimeType(rawType) {
+  if (typeof rawType !== "string") {
+    return "";
+  }
+
+  const baseType = rawType.split(";")[0].trim().toLowerCase();
+  return baseType;
+}
+
 function getRecorderOptions() {
   let options = { mimeType: "audio/webm;codecs=opus" };
 
@@ -271,6 +280,92 @@ function getRecorderOptions() {
   return options;
 }
 
+async function sniffMimeTypeFromChunks(chunks) {
+  const sampleChunk = chunks.find((chunk) => chunk && chunk.size);
+
+  if (!sampleChunk) {
+    return "";
+  }
+
+  try {
+    const header = new Uint8Array(await sampleChunk.slice(0, 16).arrayBuffer());
+
+    if (
+      header.length >= 4 &&
+      header[0] === 0x1a &&
+      header[1] === 0x45 &&
+      header[2] === 0xdf &&
+      header[3] === 0xa3
+    ) {
+      return "audio/webm";
+    }
+
+    if (
+      header.length >= 12 &&
+      header[4] === 0x66 &&
+      header[5] === 0x74 &&
+      header[6] === 0x79 &&
+      header[7] === 0x70
+    ) {
+      return "audio/mp4";
+    }
+
+    if (
+      header.length >= 4 &&
+      header[0] === 0x4f &&
+      header[1] === 0x67 &&
+      header[2] === 0x67 &&
+      header[3] === 0x53
+    ) {
+      return "audio/ogg";
+    }
+
+    if (
+      header.length >= 12 &&
+      header[0] === 0x52 &&
+      header[1] === 0x49 &&
+      header[2] === 0x46 &&
+      header[3] === 0x46 &&
+      header[8] === 0x57 &&
+      header[9] === 0x41 &&
+      header[10] === 0x56 &&
+      header[11] === 0x45
+    ) {
+      return "audio/wav";
+    }
+  } catch (error) {
+    console.warn("Kon bestandskop niet inspecteren:", error);
+  }
+
+  return "";
+}
+
+async function resolveMimeType(chunks, fallbackTypes = []) {
+  const chunkWithType = chunks.find(
+    (chunk) => chunk && typeof chunk.type === "string" && chunk.type
+  );
+
+  if (chunkWithType) {
+    const clean = sanitizeMimeType(chunkWithType.type);
+    if (clean) {
+      return clean;
+    }
+  }
+
+  const sniffed = await sniffMimeTypeFromChunks(chunks);
+  if (sniffed) {
+    return sniffed;
+  }
+
+  for (const rawType of fallbackTypes) {
+    const clean = sanitizeMimeType(rawType);
+    if (clean) {
+      return clean;
+    }
+  }
+
+  return "audio/webm";
+}
 
 // ======================================================
 //  START KNOP
@@ -479,5 +574,6 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
