@@ -16,15 +16,22 @@ import edge_tts
 
 
 # --------------------------------this is for an app configuration and the needed apikeys
-app = Flask("traductionimpact3")
-CORS(app)
-load_dotenv()
-
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEEPL_API_KEY = os.getenv("DEEPL_API_KEY")
 
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
-deepl_translator = deepl.Translator(DEEPL_API_KEY)
+openai_client = None
+if OPENAI_API_KEY:
+    try:
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    except Exception as exc:
+        print(f"[!] Kon OpenAI client niet initialiseren: {exc}")
+
+deepl_translator = None
+if DEEPL_API_KEY:
+    try:
+        deepl_translator = deepl.Translator(DEEPL_API_KEY)
+    except Exception as exc:
+        print(f"[!] Kon DeepL vertaler niet initialiseren: {exc}")
 
 vorige_zinnen = []
 context_zinnen = []
@@ -95,6 +102,9 @@ def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
     Geef enkel de verbeterde zin terug, zonder uitleg.
     """
 
+    if openai_client is None:
+        return nieuwe_zin
+
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -115,6 +125,9 @@ def transcribe_audio():
 
     audio_file = request.files["audio"]
     taalcode = request.form.get("lang", "fr")
+
+    if openai_client is None:
+        return jsonify({"error": "OpenAI API-sleutel ontbreekt of client kon niet initialiseren."}), 503
 
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
@@ -139,7 +152,7 @@ def transcribe_audio():
         return jsonify({"recognized": tekst, "corrected": corrected})
 
     except Exception as e:
-        return jsonify({"error": f"Fout bij transcriptie: {str(e)}"}), 500
+        return jsonify({"error": f"Fout bij transcriptie: {str(e)}"}), 502
     finally:
         if os.path.exists(audio_path):
             os.remove(audio_path)
@@ -288,6 +301,12 @@ def vertaal_audio():
     audio_path = None
     converted_path = None
 
+    if openai_client is None:
+        return (
+            jsonify({"error": "OpenAI API-sleutel ontbreekt of client kon niet initialiseren."}),
+            503,
+        )
+
     try:
         suffix = _determine_temp_suffix(audio_file)
 
@@ -309,13 +328,10 @@ def vertaal_audio():
                 return jsonify({"error": f"Kon audio niet converteren: {str(e)}"}), 400
 
         # 🎧 Transcriptie via Whisper
-        with open(audio_path, "rb") as af:
+         with open(audio_path, "rb") as af:
             transcript_response = openai_client.audio.transcriptions.create(
                 model="whisper-1", file=af, language=bron_taal
             )
-        tekst = transcript_response.text.strip()
-        if not tekst:
-            return jsonify({"error": "Geen spraak gedetecteerd."}), 400
 
         # ✍️ Contextuele correctie
         verbeterde_zin = corrigeer_zin_met_context(tekst, vorige_zinnen)
@@ -328,7 +344,7 @@ def vertaal_audio():
             "sl", "sv", "tr", "uk", "zh"
         }
 
-        if doel_taal in deepl_supported:
+        if doel_taal in deepl_supported and deepl_translator is not None:
             try:
                 doel_taal_code = map_vertaling_taalcode_deepl(doel_taal)
                 result = deepl_translator.translate_text(
@@ -352,22 +368,28 @@ def vertaal_audio():
                 Als dat ook niet lukt, vertaal dan naar het Frans als fallback.
             """)
 
-            response = openai_client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-            )
-            vertaling = response.choices[0].message.content.strip()
+            if openai_client is None:
+                vertaling = verbeterde_zin
+            else:
+                response = openai_client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                )
+                vertaling = response.choices[0].message.content.strip()
 
         else:
             # Fallback naar GPT voor andere niet-DeepL talen
             prompt = f"Vertaal deze zin van {bron_taal} naar {doel_taal}: {verbeterde_zin}"
-            response = openai_client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-            )
-            vertaling = response.choices[0].message.content.strip()
+            if openai_client is None:
+                vertaling = verbeterde_zin
+            else:
+                response = openai_client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                )
+                vertaling = response.choices[0].message.content.strip()
 
         # 🔊 Spraakuitvoer (indien niet in tekst-only modus)
         threading.Thread(
@@ -386,7 +408,7 @@ def vertaal_audio():
 
     except Exception as e:
         print(f"[!] Onverwachte fout: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)}), 502
 
     finally:
         if converted_path and os.path.exists(converted_path):
@@ -402,6 +424,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
