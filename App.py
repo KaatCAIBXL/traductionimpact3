@@ -1,3 +1,4 @@
+
 from flask_cors import CORS
 from flask import Flask, request, jsonify, send_from_directory, send_file, after_this_request
 import mimetypes
@@ -16,6 +17,10 @@ import edge_tts
 
 
 # --------------------------------this is for an app configuration and the needed apikeys
+app = Flask("traductionimpact3")
+CORS(app)
+load_dotenv()
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEEPL_API_KEY = os.getenv("DEEPL_API_KEY")
 
@@ -94,9 +99,9 @@ def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
         instructies_correctie = "(Geen instructies gevonden.)"
 
     prompt = f"""
-    Opdracht 1: bekijk alle vorige zinnen door de context te lezen. Ga dan na of er een woord is in de nieuwe zin die niet in de context past. 
+    Opdracht 1: bekijk alle vorige zinnen door de context te lezen. Ga dan na of er een woord is in de nieuwe zin die niet logisch is of niet in de context of zin past. Als dat het geval is vervang dan het woord door een woord dat wel in de context of zin past en dezelfde klanken heeft.  
     Opdracht 2: Als je een bijbeltekst herkent uit een erkende bijbelvertaling, zorg dat die klopt.
-    Opdracht 3: Als je merkt dat er gebed is, kijk dan naar {instructies_correctie}.
+    Opdracht 3: Als je merkt dat er gebed is, kijk dan naar {instructies_correctie} om woorden te corrigeren. 
     Context: "{context}"
     Nieuwe zin: "{nieuwe_zin}"
     Geef enkel de verbeterde zin terug, zonder uitleg.
@@ -328,10 +333,13 @@ def vertaal_audio():
                 return jsonify({"error": f"Kon audio niet converteren: {str(e)}"}), 400
 
         # 🎧 Transcriptie via Whisper
-         with open(audio_path, "rb") as af:
+        with open(audio_path, "rb") as af:
             transcript_response = openai_client.audio.transcriptions.create(
                 model="whisper-1", file=af, language=bron_taal
             )
+        tekst = transcript_response.text.strip()
+        if not tekst:
+            return jsonify({"error": "Geen spraak gedetecteerd."}), 400
 
         # ✍️ Contextuele correctie
         verbeterde_zin = corrigeer_zin_met_context(tekst, vorige_zinnen)
@@ -424,14 +432,6 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
-
-
-
-
-
-
-
-
 
 
 
