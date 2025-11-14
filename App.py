@@ -362,15 +362,6 @@ def vertaal_audio():
 
     try:
         suffix = _determine_temp_suffix(audio_file)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            audio_file.save(tmp.name)
-            temp_input_path = tmp.name
-
-        audio_path = temp_input_path
-
-        if not suffix.lower().endswith(".wav"):
-           suffix = _determine_temp_suffix(audio_file)
         suffix_lower = suffix.lower()
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -379,15 +370,37 @@ def vertaal_audio():
 
         audio_path = temp_input_path
 
-        # Whisper ondersteunt verschillende bestandsformaten rechtstreeks.
-        # Alleen wanneer het oorspronkelijke formaat niet in de
-        # ondersteunde lijst zit, proberen we het te converteren naar wav.
-        if suffix_lower not in SUPPORTED_WHISPER_EXTENSIONS:
+        transcript_response = None
+        transcript_error = None
+
+        def _transcribe_with_whisper(path):
+            with open(path, "rb") as af:
+                return openai_client.audio.transcriptions.create(
+                    model="whisper-1", file=af, language=bron_taal
+                )
+
+        needs_conversion = suffix_lower not in SUPPORTED_WHISPER_EXTENSIONS
+
+        if not needs_conversion:
+            try:
+                transcript_response = _transcribe_with_whisper(audio_path)
+            except Exception as exc:
+                transcript_error = exc
+                needs_conversion = True
+                print(
+                    "[!] Directe Whisper-transcriptie mislukt, probeer conversie naar wav als fallback:",
+                    exc,
+                )
+
+        if transcript_response is None and needs_conversion:
             try:
                 converted_path = convert_to_wav(temp_input_path)
                 audio_path = converted_path
             except CouldntDecodeError as e:
-                print(f"[!] Kon audio niet decoderen (ffmpeg ontbreekt?). Gebruik origineel bestand: {e}")
+                print(
+                    "[!] Kon audio niet decoderen (ffmpeg ontbreekt?). Gebruik origineel bestand:",
+                    e,
+                )
                 audio_path = temp_input_path
             except RuntimeError as e:
                 print(f"[!] Fout bij converteren naar wav (ffmpeg fallback): {e}")
@@ -396,20 +409,27 @@ def vertaal_audio():
                 print(f"[!] Fout bij converteren naar wav: {e}")
                 return jsonify({"error": f"Kon audio niet converteren: {str(e)}"}), 400
 
-        ext_for_whisper = os.path.splitext(audio_path)[1].lower()
-        if ext_for_whisper not in SUPPORTED_WHISPER_EXTENSIONS:
-            boodschap = (
-                "Dit audioformaat wordt niet ondersteund. Probeer een andere browser of "
-                "controleer of ffmpeg correct geïnstalleerd is."
-            )
-            print(f"[!] Niet-ondersteund formaat voor Whisper: {ext_for_whisper}")
-            return jsonify({"error": boodschap}), 400
+            ext_for_whisper = os.path.splitext(audio_path)[1].lower()
+            if ext_for_whisper not in SUPPORTED_WHISPER_EXTENSIONS:
+                boodschap = (
+                    "Dit audioformaat wordt niet ondersteund. Probeer een andere browser of "
+                    "controleer of ffmpeg correct geïnstalleerd is."
+                )
+                print(f"[!] Niet-ondersteund formaat voor Whisper: {ext_for_whisper}")
+                return jsonify({"error": boodschap}), 400
 
-        # 🎧 Transcriptie via Whisper
-        with open(audio_path, "rb") as af:
-            transcript_response = openai_client.audio.transcriptions.create(
-                model="whisper-1", file=af, language=bron_taal
-            )
+            try:
+                transcript_response = _transcribe_with_whisper(audio_path)
+            except Exception as exc:
+                transcript_error = exc
+
+        if transcript_response is None:
+            foutmelding = "Kon audio niet transcriberen."
+            if transcript_error is not None:
+                foutmelding += f" (Whisper-fout: {transcript_error})"
+            print(f"[!] {foutmelding}")
+            return jsonify({"error": foutmelding}), 502
+
         tekst = transcript_response.text.strip()
         if not tekst:
             return jsonify({"error": "Geen spraak gedetecteerd."}), 400
@@ -505,6 +525,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
