@@ -2,7 +2,7 @@
 from flask_cors import CORS
 from flask import Flask, request, jsonify, send_from_directory, send_file, after_this_request
 import mimetypes
-import tempfile, os, threading, asyncio, textwrap
+import tempfile, os, threading, asyncio, textwrap, subprocess, shutil
 from openai import OpenAI
 import deepl
 from flask_cors import CORS
@@ -73,6 +73,15 @@ STEMMAP = {
     "dioula": "sw-KE-ZuriNeural",
 }
 
+SUPPORTED_WHISPER_EXTENSIONS = {
+    ".mp3",
+    ".mp4",
+    ".mpeg",
+    ".mpga",
+    ".m4a",
+    ".wav",
+    ".webm",
+}
 
 # ---------------------------------------------------------------------home page
 
@@ -232,10 +241,49 @@ def map_vertaling_taalcode_deepl(taalcode):
 
 #----------------------------------------------------audiobestand omvormen
 def convert_to_wav(input_path):
-    sound = AudioSegment.from_file(input_path)   # herkent mp4, webm, wav, etc.
+    """Converteer elk ondersteund audiobestand naar wav.
+
+    We proberen eerst via pydub/ffmpeg. Als dat niet lukt (bijvoorbeeld omdat de
+    container ffmpeg niet kan vinden of omdat een specifiek formaat niet
+    ondersteund wordt), doen we een directe ffmpeg-aanroep als fallback. Wanneer
+    beide strategieën falen, laten we de oorspronkelijke fout doorbubbelen zodat
+    de aanroeper daar gepast op kan reageren."""
+
     wav_path = input_path + ".wav"
-    sound.export(wav_path, format="wav")
-    return wav_path
+
+    try:
+        sound = AudioSegment.from_file(input_path)  # herkent mp4, webm, wav, etc.
+        sound.export(wav_path, format="wav")
+        return wav_path
+    except CouldntDecodeError:
+        # Als pydub het niet redt, probeer een directe ffmpeg fallback.
+        ffmpeg_path = shutil.which("ffmpeg")
+        if not ffmpeg_path:
+            raise
+
+        try:
+            completed = subprocess.run(
+                [
+                    ffmpeg_path,
+                    "-y",
+                    "-i",
+                    input_path,
+                    wav_path,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr_output = exc.stderr.decode("utf-8", errors="ignore")
+            raise RuntimeError(
+                f"FFmpeg kon het bestand niet converteren: {stderr_output.strip()}"
+            ) from exc
+
+        if completed.returncode == 0 and os.path.exists(wav_path):
+            return wav_path
+
+        raise RuntimeError("FFmpeg conversie gaf geen uitvoerbestand.")
 
 
 def _determine_temp_suffix(audio_file):
@@ -328,9 +376,21 @@ def vertaal_audio():
             except CouldntDecodeError as e:
                 print(f"[!] Kon audio niet decoderen (ffmpeg ontbreekt?). Gebruik origineel bestand: {e}")
                 audio_path = temp_input_path
+            except RuntimeError as e:
+                print(f"[!] Fout bij converteren naar wav (ffmpeg fallback): {e}")
+                return jsonify({"error": str(e)}), 400
             except Exception as e:
                 print(f"[!] Fout bij converteren naar wav: {e}")
                 return jsonify({"error": f"Kon audio niet converteren: {str(e)}"}), 400
+
+        ext_for_whisper = os.path.splitext(audio_path)[1].lower()
+        if ext_for_whisper not in SUPPORTED_WHISPER_EXTENSIONS:
+            boodschap = (
+                "Dit audioformaat wordt niet ondersteund. Probeer een andere browser of "
+                "controleer of ffmpeg correct geïnstalleerd is."
+            )
+            print(f"[!] Niet-ondersteund formaat voor Whisper: {ext_for_whisper}")
+            return jsonify({"error": boodschap}), 400
 
         # 🎧 Transcriptie via Whisper
         with open(audio_path, "rb") as af:
@@ -432,6 +492,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
