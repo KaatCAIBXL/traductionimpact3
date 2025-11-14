@@ -324,7 +324,8 @@ if (startButton) {
           return;
         }
 
-        const rawMimeType = event.data.type || "audio/webm";
+        const rawMimeType =
+          event.data.type || mediaRecorder?.mimeType || "audio/webm";
         const cleanMimeType = rawMimeType.split(";")[0].trim() || "audio/webm";
         const blob = new Blob(bufferChunks, { type: cleanMimeType });
         bufferChunks = [];
@@ -478,4 +479,5 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
