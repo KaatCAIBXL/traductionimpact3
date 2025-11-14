@@ -370,6 +370,19 @@ def vertaal_audio():
         audio_path = temp_input_path
 
         if not suffix.lower().endswith(".wav"):
+           suffix = _determine_temp_suffix(audio_file)
+        suffix_lower = suffix.lower()
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            audio_file.save(tmp.name)
+            temp_input_path = tmp.name
+
+        audio_path = temp_input_path
+
+        # Whisper ondersteunt verschillende bestandsformaten rechtstreeks.
+        # Alleen wanneer het oorspronkelijke formaat niet in de
+        # ondersteunde lijst zit, proberen we het te converteren naar wav.
+        if suffix_lower not in SUPPORTED_WHISPER_EXTENSIONS:
             try:
                 converted_path = convert_to_wav(temp_input_path)
                 audio_path = converted_path
@@ -492,6 +505,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
