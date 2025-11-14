@@ -4,9 +4,13 @@ FROM python:3.11-slim
 # Stel werkdirectory in
 WORKDIR /app
 
-# Installeer systeemvereisten (voor pydub)
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+# Installeer systeemvereisten (voor pydub + ffmpeg)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+
 
 # Kopieer dependencies en installeer ze
 COPY requirements.txt .
@@ -23,5 +27,6 @@ ENTRYPOINT ["python", "App.py"]
 
 # Opruimen (optioneel, maar niet dubbel)
 RUN rm -rf /root/.cache /tmp/* /var/cache/*
+
 
 
