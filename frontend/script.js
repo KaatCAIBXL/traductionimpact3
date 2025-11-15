@@ -344,6 +344,7 @@ async function resolveMimeType(chunks, fallbackTypes = []) {
   const chunkWithType = chunks.find(
     (chunk) => chunk && typeof chunk.type === "string" && chunk.type
   );
+                                                            
 
   if (chunkWithType) {
     const clean = sanitizeMimeType(chunkWithType.type);
@@ -365,6 +366,40 @@ async function resolveMimeType(chunks, fallbackTypes = []) {
   }
 
   return "audio/webm";
+}
+
+const MIME_EXTENSION_MAP = {
+  "audio/webm": "webm",
+  "video/webm": "webm",
+  "audio/ogg": "ogg",
+  "video/ogg": "ogg",
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/mp4": "mp4",
+  "video/mp4": "mp4",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/aac": "aac",
+  "audio/3gpp": "3gp",
+  "audio/3gpp2": "3g2",
+};
+
+function mimeTypeToExtension(mimeType) {
+  const clean = sanitizeMimeType(mimeType);
+
+  if (clean && MIME_EXTENSION_MAP[clean]) {
+    return MIME_EXTENSION_MAP[clean];
+  }
+
+  if (clean && clean.includes("/")) {
+    const parts = clean.split("/");
+    const candidate = parts[1].trim();
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return "webm";
 }
 
 // ======================================================
@@ -420,15 +455,19 @@ if (startButton) {
         }
 
         const rawMimeType =
-          event.data.type || mediaRecorder?.mimeType || "audio/webm";
-        const cleanMimeType = rawMimeType.split(";")[0].trim() || "audio/webm";
+          event.data.type || mediaRecorder?.mimeType || "";
+        const detectionChunks = bufferChunks.slice();
+        const cleanMimeType =
+          (await resolveMimeType(detectionChunks, [
+            rawMimeType,
+            mediaRecorder?.mimeType,
+            "audio/webm",
+          ])) || "audio/webm";
         const blob = new Blob(bufferChunks, { type: cleanMimeType });
         bufferChunks = [];
         bufferedDurationMs = 0;
 
-        const extension = cleanMimeType.includes("/")
-          ? cleanMimeType.split("/")[1].trim() || "webm"
-          : "webm";
+        const extension = mimeTypeToExtension(cleanMimeType);
 
         const formData = new FormData();
         formData.append("audio", blob, `spraak.${extension}`);
@@ -574,6 +613,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
