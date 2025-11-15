@@ -261,13 +261,20 @@ def convert_to_wav(input_path):
         if not ffmpeg_path:
             raise
 
-        try:
+         try:
             completed = subprocess.run(
                 [
                     ffmpeg_path,
                     "-y",
                     "-i",
                     input_path,
+                    "-vn",
+                    "-acodec",
+                    "pcm_s16le",
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
                     wav_path,
                 ],
                 stdout=subprocess.PIPE,
@@ -276,8 +283,10 @@ def convert_to_wav(input_path):
             )
         except subprocess.CalledProcessError as exc:
             stderr_output = exc.stderr.decode("utf-8", errors="ignore")
+            trimmed_output = "\n".join(stderr_output.strip().splitlines()[-5:])
             raise RuntimeError(
-                f"FFmpeg kon het bestand niet converteren: {stderr_output.strip()}"
+                "FFmpeg kon het bestand niet converteren: "
+                f"{trimmed_output or 'onbekende fout'}"
             ) from exc
 
         if completed.returncode == 0 and os.path.exists(wav_path):
@@ -525,6 +534,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
