@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask import Flask, request, jsonify, send_from_directory, send_file, after_this_request
 import mimetypes
 import tempfile, os, threading, asyncio, textwrap, subprocess, shutil
+from typing import Optional
 from openai import OpenAI
 import deepl
 from flask_cors import CORS
@@ -343,7 +344,41 @@ def _determine_temp_suffix(audio_file):
     if guessed and guessed.lower() in allowed_ext:
         return guessed
 
-    return ".webm"
+   return ".webm"
+
+
+def _sniff_file_extension(path: str) -> Optional[str]:
+    """Lees de header van ``path`` en probeer het werkelijke formaat te bepalen.
+
+    Safari levert bijvoorbeeld soms ``audio/mp4`` blobs aan, ook wanneer de
+    frontend de extensie ``.webm`` opgeeft. Hierdoor mislukt de conversie door
+    ffmpeg en krijgen we een foutmelding van het type "Invalid data found when
+    processing input". Door het bestand hier opnieuw te inspecteren kunnen we
+    de juiste extensie forceren voordat we Whisper of ffmpeg aanroepen.
+    """
+
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(16)
+    except OSError:
+        return None
+
+    if len(header) < 8:
+        return None
+
+    if header.startswith(b"\x1aE\xdf\xa3"):
+        return "webm"
+
+    if header[4:8] == b"ftyp":
+        return "mp4"
+
+    if header.startswith(b"OggS"):
+        return "ogg"
+
+    if header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+        return "wav"
+
+    return None
 
 
 # -------------------- HOOFDROUTE --------------------
@@ -378,6 +413,23 @@ def vertaal_audio():
             temp_input_path = tmp.name
 
         audio_path = temp_input_path
+
+        detected_extension = _sniff_file_extension(temp_input_path)
+        if detected_extension:
+            detected_suffix = f".{detected_extension.lower()}"
+            if detected_suffix != suffix_lower:
+                base, _ = os.path.splitext(temp_input_path)
+                corrected_path = base + detected_suffix
+                try:
+                    os.replace(temp_input_path, corrected_path)
+                    temp_input_path = corrected_path
+                    audio_path = corrected_path
+                    suffix_lower = detected_suffix
+                except OSError as exc:
+                    print(
+                        "[!] Kon tijdelijke audio niet hernoemen naar gedetecteerde extensie:",
+                        exc,
+                    )
 
         transcript_response = None
         transcript_error = None
@@ -534,6 +586,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
