@@ -22,6 +22,9 @@ let isPaused = false;
 let intervalId = null;
 let activeStream = null;
 let previousSpeakingState = false;
+let recorderOptions = null;
+let pendingRecorderRestart = false;
+let isRestartingRecorder = false;
 
 const micStatusElement = document.getElementById("micStatus");
 const startButton = document.getElementById("start");
@@ -146,6 +149,9 @@ function releaseAudioResources() {
   analyser = null;
   source = null;
   previousSpeakingState = false;
+  recorderOptions = null;
+  pendingRecorderRestart = false;
+  isRestartingRecorder = false;
   stopActiveStream();
 }
 
@@ -402,6 +408,191 @@ function mimeTypeToExtension(mimeType) {
   return "webm";
 }
 
+function initializeMediaRecorder(stream, optionsOverride) {
+  if (!stream) {
+    return null;
+  }
+
+  const options = optionsOverride || recorderOptions || getRecorderOptions();
+  recorderOptions = options;
+
+  const recorder = new MediaRecorder(stream, options);
+
+  const handleStop = () => {
+    const shouldRestart = pendingRecorderRestart;
+    pendingRecorderRestart = false;
+    isRestartingRecorder = false;
+    mediaRecorder = null;
+
+    if (shouldRestart && stream.active) {
+      bufferChunks = [];
+      bufferedDurationMs = 0;
+      try {
+        initializeMediaRecorder(stream, recorderOptions);
+        if (pauseButton) {
+          pauseButton.disabled = false;
+          pauseButton.innerText = "⏸️ pause ⏸️";
+        }
+        if (stopButton) {
+          stopButton.disabled = false;
+        }
+      } catch (error) {
+        console.error("Kon MediaRecorder niet herstarten:", error);
+        setMicStatus("error", "Kon opname niet herstarten");
+        releaseAudioResources();
+        if (startButton) startButton.disabled = false;
+      }
+      return;
+    }
+
+    releaseAudioResources();
+    if (startButton) startButton.disabled = false;
+    if (pauseButton) {
+      pauseButton.disabled = true;
+      pauseButton.innerText = "⏸️ pause ⏸️";
+    }
+    if (stopButton) stopButton.disabled = true;
+    isPaused = false;
+    setMicStatus("idle");
+  };
+
+  const handleError = (event) => {
+    if (pendingRecorderRestart) {
+      return;
+    }
+
+    console.error("Recorder error", event.error);
+    setMicStatus("error", event.error?.message || "Recorder error");
+    releaseAudioResources();
+    mediaRecorder = null;
+    if (startButton) startButton.disabled = false;
+    if (pauseButton) {
+      pauseButton.disabled = true;
+      pauseButton.innerText = "⏸️ pause ⏸️";
+    }
+    if (stopButton) stopButton.disabled = true;
+  };
+
+  recorder.addEventListener("stop", handleStop);
+  recorder.addEventListener("error", handleError);
+  recorder.addEventListener("dataavailable", handleDataAvailable);
+
+  recorder.start(CHUNK_INTERVAL_MS);
+  mediaRecorder = recorder;
+  return recorder;
+}
+
+function scheduleRecorderRestart() {
+  if (!mediaRecorder || mediaRecorder.state === "inactive") {
+    return;
+  }
+
+  if (pendingRecorderRestart) {
+    return;
+  }
+
+  pendingRecorderRestart = true;
+  isRestartingRecorder = true;
+  try {
+    mediaRecorder.stop();
+  } catch (error) {
+    console.error("Kon MediaRecorder niet stoppen voor herstart:", error);
+    pendingRecorderRestart = false;
+    isRestartingRecorder = false;
+  }
+}
+
+async function handleDataAvailable(event) {
+  if (isRestartingRecorder) {
+    return;
+  }
+
+  const now = Date.now();
+  const stilte = now - lastSpeechTime;
+
+  if (event.data && event.data.size) {
+    bufferChunks.push(event.data);
+    bufferedDurationMs += CHUNK_INTERVAL_MS;
+  }
+
+  const shouldFlush =
+    bufferChunks.length > 0 &&
+    (stilte >= SILENCE_FLUSH_MS || bufferedDurationMs >= MAX_BUFFER_MS);
+
+  if (!shouldFlush) {
+    return;
+  }
+
+  const recorder = event.target || mediaRecorder;
+  const rawMimeType =
+    event.data.type || recorder?.mimeType || mediaRecorder?.mimeType || "";
+  const detectionChunks = bufferChunks.slice();
+  bufferChunks = [];
+  bufferedDurationMs = 0;
+
+  const cleanMimeType =
+    (await resolveMimeType(detectionChunks, [
+      rawMimeType,
+      recorder?.mimeType,
+      mediaRecorder?.mimeType,
+      "audio/webm",
+    ])) || "audio/webm";
+  const blob = new Blob(detectionChunks, { type: cleanMimeType });
+  const extension = mimeTypeToExtension(cleanMimeType);
+
+  const formData = new FormData();
+  formData.append("audio", blob, `spraak.${extension}`);
+  formData.append("from", sourceLanguageSelect.value);
+  formData.append("to", targetLanguageSelect.value);
+  formData.append("textOnly", textOnlyCheckbox.checked ? "true" : "false");
+
+  const unsupportedByDeepL = [
+    "sw",
+    "am",
+    "mg",
+    "lingala",
+    "kikongo",
+    "tshiluba",
+    "baloué",
+    "dioula",
+  ];
+
+  if (unsupportedByDeepL.includes(targetLanguageSelect.value)) {
+    alert("⚠️ This language isn't supported by DeepL. AI will translate instead.");
+  }
+
+  const mimeNeedsRestart =
+    cleanMimeType.includes("mp4") || extension === "mp4" || extension === "m4a";
+
+  try {
+    const response = await fetch("/api/translate", { method: "POST", body: formData });
+    const data = await response.json();
+
+    if (data.error) {
+      console.error("Vertaalfout:", data.error);
+    } else {
+      const segment = {
+        recognized: data.recognized || "",
+        corrected: data.corrected || data.recognized || "",
+        translation: data.translation || "",
+      };
+
+      sessionSegments.push(segment);
+      renderLatestSegments();
+
+      if (!textOnlyCheckbox.checked && segment.translation) {
+        spreekVertaling(segment.translation, targetLanguageSelect.value);
+      }
+    }
+  } catch (error) {
+    console.error("Fout bij versturen van audio:", error);
+  } finally {
+    if (mimeNeedsRestart) {
+      scheduleRecorderRestart();
+    }
+  }
+}
+
 // ======================================================
 //  START KNOP
 // ======================================================
@@ -433,100 +624,13 @@ if (startButton) {
       await setupAudioDetection(stream);
 
       const options = getRecorderOptions();
-      mediaRecorder = new MediaRecorder(stream, options);
-
-      mediaRecorder.start(CHUNK_INTERVAL_MS); // kortere fragmenten voor snellere transcriptie
-
-      mediaRecorder.ondataavailable = async (event) => {
-        const now = Date.now();
-        const stilte = now - lastSpeechTime;
-
-        if (event.data && event.data.size) {
-          bufferChunks.push(event.data);
-          bufferedDurationMs += CHUNK_INTERVAL_MS;
-        }
-
-        const shouldFlush =
-          bufferChunks.length > 0 &&
-          (stilte >= SILENCE_FLUSH_MS || bufferedDurationMs >= MAX_BUFFER_MS);
-
-        if (!shouldFlush) {
-          return;
-        }
-
-        const rawMimeType =
-          event.data.type || mediaRecorder?.mimeType || "";
-        const detectionChunks = bufferChunks.slice();
-        const cleanMimeType =
-          (await resolveMimeType(detectionChunks, [
-            rawMimeType,
-            mediaRecorder?.mimeType,
-            "audio/webm",
-          ])) || "audio/webm";
-        const blob = new Blob(bufferChunks, { type: cleanMimeType });
-        bufferChunks = [];
-        bufferedDurationMs = 0;
-
-        const extension = mimeTypeToExtension(cleanMimeType);
-
-        const formData = new FormData();
-        formData.append("audio", blob, `spraak.${extension}`);
-        formData.append("from", sourceLanguageSelect.value);
-        formData.append("to", targetLanguageSelect.value);
-        formData.append("textOnly", textOnlyCheckbox.checked ? "true" : "false");
-
-        const unsupportedByDeepL = [
-          "sw", "am", "mg", "lingala", "kikongo",
-          "tshiluba", "baloué", "dioula"
-        ];
-
-        if (unsupportedByDeepL.includes(targetLanguageSelect.value)) {
-          alert("⚠️ This language isn't supported by DeepL. AI will translate instead.");
-        }
-
-        const response = await fetch("/api/translate", { method: "POST", body: formData });
-        const data = await response.json();
-
-        if (data.error) {
-          console.error("Vertaalfout:", data.error);
-          return;
-        }
-
-        const segment = {
-          recognized: data.recognized || "",
-          corrected: data.corrected || data.recognized || "",
-          translation: data.translation || "",
-        };
-
-        sessionSegments.push(segment);
-        renderLatestSegments();
-
-        if (!textOnlyCheckbox.checked && segment.translation) {
-          spreekVertaling(segment.translation, targetLanguageSelect.value);
-        }
-      };
-
-      mediaRecorder.addEventListener("stop", () => {
-        releaseAudioResources();
-        mediaRecorder = null;
-      });
-
-      mediaRecorder.addEventListener("error", (event) => {
-        console.error("Recorder error", event.error);
-        setMicStatus("error", event.error?.message || "Recorder error");
-        releaseAudioResources();
-        if (startButton) startButton.disabled = false;
-        if (pauseButton) {
-          pauseButton.disabled = true;
-          pauseButton.innerText = "⏸️ pause ⏸️";
-        }
-        if (stopButton) stopButton.disabled = true;
-      });
+      initializeMediaRecorder(stream, options);
 
       // Knoppen togglen
       startButton.disabled = true;
       if (pauseButton) pauseButton.disabled = false;
       if (stopButton) stopButton.disabled = false;
+  
     } catch (err) {
       alert("❌ Microfoon werkt niet: " + err.message);
       console.error("Microfoonfout:", err);
@@ -613,6 +717,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
