@@ -344,7 +344,7 @@ def _determine_temp_suffix(audio_file):
     if guessed and guessed.lower() in allowed_ext:
         return guessed
 
-   return ".webm"
+    return ".webm"
 
 
 def _sniff_file_extension(path: str) -> Optional[str]:
@@ -586,6 +586,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
