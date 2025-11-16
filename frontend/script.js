@@ -41,6 +41,9 @@ let micStatusState = "idle";
 const CHUNK_INTERVAL_MS = 1500;
 const SILENCE_FLUSH_MS = 1200;
 const MAX_BUFFER_MS = 6000;
+// Zorg dat elke blob die we naar de backend sturen opnieuw een container-header bevat
+// (Safari/Chrome leveren anders "headerloze" segmenten waardoor Whisper niets kan).
+const FORCE_RECORDER_RESTART_AFTER_UPLOAD = true;
 let sessionSegments = [];
 
 function escapeHtml(text) {
@@ -562,7 +565,10 @@ async function handleDataAvailable(event) {
   }
 
   const mimeNeedsRestart =
-    cleanMimeType.includes("mp4") || extension === "mp4" || extension === "m4a";
+    FORCE_RECORDER_RESTART_AFTER_UPLOAD ||
+    cleanMimeType.includes("mp4") ||
+    extension === "mp4" ||
+    extension === "m4a";
 
   try {
     const response = await fetch("/api/translate", { method: "POST", body: formData });
@@ -717,6 +723,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
