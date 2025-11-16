@@ -25,6 +25,7 @@ let previousSpeakingState = false;
 let recorderOptions = null;
 let pendingRecorderRestart = false;
 let isRestartingRecorder = false;
+let cachedMp4InitSegment = null;
 
 const micStatusElement = document.getElementById("micStatus");
 const startButton = document.getElementById("start");
@@ -44,6 +45,7 @@ const MAX_BUFFER_MS = 6000;
 // Zorg dat elke blob die we naar de backend sturen opnieuw een container-header bevat
 // (Safari/Chrome leveren anders "headerloze" segmenten waardoor Whisper niets kan).
 const FORCE_RECORDER_RESTART_AFTER_UPLOAD = true;
+const MAX_INIT_SEGMENT_BYTES = 128 * 1024;
 let sessionSegments = [];
 
 function escapeHtml(text) {
@@ -155,9 +157,9 @@ function releaseAudioResources() {
   recorderOptions = null;
   pendingRecorderRestart = false;
   isRestartingRecorder = false;
+  cachedMp4InitSegment = null;
   stopActiveStream();
 }
-
 if (micStatusElement && startButton) {
   micStatusElement.addEventListener("click", () => {
     if (!startButton.disabled) {
@@ -344,9 +346,93 @@ async function sniffMimeTypeFromChunks(chunks) {
     }
   } catch (error) {
     console.warn("Kon bestandskop niet inspecteren:", error);
-  }
+
+    }
 
   return "";
+}
+
+async function extractMp4InitSegment(blob) {
+  try {
+    const buffer = await blob.arrayBuffer();
+    const view = new DataView(buffer);
+    let offset = 0;
+    let endOfHeader = 0;
+
+    while (offset + 8 <= view.byteLength) {
+      const atomSize = view.getUint32(offset);
+      if (atomSize < 8) {
+        break;
+      }
+
+      const atomType = String.fromCharCode(
+        view.getUint8(offset + 4),
+        view.getUint8(offset + 5),
+        view.getUint8(offset + 6),
+        view.getUint8(offset + 7)
+      );
+
+      if (["ftyp", "moov", "free", "skip"].includes(atomType)) {
+        endOfHeader = offset + atomSize;
+        offset += atomSize;
+        if (atomType === "moov") {
+          break;
+        }
+        continue;
+      }
+
+      if (atomType === "mdat" || atomType === "moof") {
+        break;
+      }
+
+      offset += atomSize;
+    }
+
+    if (endOfHeader > 0) {
+      const headerSize = Math.min(endOfHeader, MAX_INIT_SEGMENT_BYTES);
+      return buffer.slice(0, headerSize);
+    }
+  } catch (error) {
+    console.warn("Kon mp4-initsegment niet extraheren:", error);
+  }
+
+  return null;
+}
+
+async function ensureChunkHasContainerHeader(chunk, rawMimeType = "") {
+  if (!chunk || !chunk.size) {
+    return chunk;
+  }
+
+  const cleanMimeType = sanitizeMimeType(rawMimeType || chunk.type || "");
+
+  if (cleanMimeType === "audio/mp4") {
+    const sniffed = await sniffMimeTypeFromChunks([chunk]);
+
+    if (sniffed === "audio/mp4") {
+      const initSegment = await extractMp4InitSegment(chunk);
+      if (initSegment) {
+        cachedMp4InitSegment = initSegment;
+      }
+      return chunk;
+    }
+
+    if (!sniffed && cachedMp4InitSegment) {
+      try {
+        const chunkBuffer = await chunk.arrayBuffer();
+        const combined = new Uint8Array(
+          cachedMp4InitSegment.byteLength + chunkBuffer.byteLength
+        );
+        combined.set(new Uint8Array(cachedMp4InitSegment), 0);
+        combined.set(new Uint8Array(chunkBuffer), cachedMp4InitSegment.byteLength);
+        return new Blob([combined], { type: "audio/mp4" });
+      } catch (error) {
+        console.warn("Kon mp4-fragment niet samenvoegen met init-segment:", error);
+      }
+    }
+  }
+
+  return chunk;
 }
 
 async function resolveMimeType(chunks, fallbackTypes = []) {
@@ -512,11 +598,21 @@ async function handleDataAvailable(event) {
 
   const now = Date.now();
   const stilte = now - lastSpeechTime;
+  const chunkMimeType =
+    (event.data && event.data.type) ||
+    mediaRecorder?.mimeType ||
+    recorderOptions?.mimeType ||
+    "";
 
   if (event.data && event.data.size) {
-    bufferChunks.push(event.data);
+    const chunkWithHeader = await ensureChunkHasContainerHeader(
+      event.data,
+      chunkMimeType
+    );
+    bufferChunks.push(chunkWithHeader);
     bufferedDurationMs += CHUNK_INTERVAL_MS;
   }
+
 
   const shouldFlush =
     bufferChunks.length > 0 &&
@@ -527,8 +623,8 @@ async function handleDataAvailable(event) {
   }
 
   const recorder = event.target || mediaRecorder;
-  const rawMimeType =
-    event.data.type || recorder?.mimeType || mediaRecorder?.mimeType || "";
+    const rawMimeType =
+    chunkMimeType || recorder?.mimeType || mediaRecorder?.mimeType || "";
   const detectionChunks = bufferChunks.slice();
   bufferChunks = [];
   bufferedDurationMs = 0;
@@ -723,6 +819,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
