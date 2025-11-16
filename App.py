@@ -241,6 +241,40 @@ def map_vertaling_taalcode_deepl(taalcode):
         return code.upper()
 
 #----------------------------------------------------audiobestand omvormen
+def _sniff_file_extension(path: str) -> Optional[str]:
+    """Lees de header van ``path`` en probeer het werkelijke formaat te bepalen.
+
+    Safari levert bijvoorbeeld soms ``audio/mp4`` blobs aan, ook wanneer de
+    frontend de extensie ``.webm`` opgeeft. Hierdoor mislukt de conversie door
+    ffmpeg en krijgen we een foutmelding van het type "Invalid data found when
+    processing input". Door het bestand hier opnieuw te inspecteren kunnen we
+    de juiste extensie forceren voordat we Whisper of ffmpeg aanroepen.
+    """
+
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(16)
+    except OSError:
+        return None
+
+    if len(header) < 8:
+        return None
+
+    if header.startswith(b"\x1aE\xdf\xa3"):
+        return "webm"
+
+    if header[4:8] == b"ftyp":
+        return "mp4"
+
+    if header.startswith(b"OggS"):
+        return "ogg"
+
+    if header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+        return "wav"
+
+    return None
+
+
 def convert_to_wav(input_path):
     """Converteer elk ondersteund audiobestand naar wav.
 
@@ -251,9 +285,13 @@ def convert_to_wav(input_path):
     de aanroeper daar gepast op kan reageren."""
 
     wav_path = input_path + ".wav"
+    sniffed_format = _sniff_file_extension(input_path)
 
     try:
-        sound = AudioSegment.from_file(input_path)  # herkent mp4, webm, wav, etc.
+        if sniffed_format:
+            sound = AudioSegment.from_file(input_path, format=sniffed_format)
+        else:
+            sound = AudioSegment.from_file(input_path)  # herkent mp4, webm, wav, etc.
         sound.export(wav_path, format="wav")
         return wav_path
     except CouldntDecodeError:
@@ -262,22 +300,32 @@ def convert_to_wav(input_path):
         if not ffmpeg_path:
             raise
 
+        ffmpeg_cmd = [
+            ffmpeg_path,
+            "-y",
+        ]
+
+        if sniffed_format:
+            ffmpeg_cmd.extend(["-f", sniffed_format])
+
+        ffmpeg_cmd.extend(
+            [
+                "-i",
+                input_path,
+                "-vn",
+                "-acodec",
+                "pcm_s16le",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                wav_path,
+            ]
+        )
+
         try:
             completed = subprocess.run(
-                [
-                    ffmpeg_path,
-                    "-y",
-                    "-i",
-                    input_path,
-                    "-vn",
-                    "-acodec",
-                    "pcm_s16le",
-                    "-ar",
-                    "16000",
-                    "-ac",
-                    "1",
-                    wav_path,
-                ],
+                ffmpeg_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=True,
@@ -586,6 +634,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
