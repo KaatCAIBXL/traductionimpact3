@@ -218,7 +218,10 @@ async function setupAudioDetection(stream) {
 
     const rms = Math.sqrt(sumSquares / analyser.fftSize);
 
-    const silenceThreshold = Math.max(noiseFloorRms * 1.8, 0.006);
+    // Maak de drempel adaptief zodat we ook zachte stemmen detecteren.
+    const adaptiveBump = noiseFloorRms + 0.0015;
+    const multiplicativeBump = noiseFloorRms * 2.2;
+    const silenceThreshold = Math.max(0.0025, adaptiveBump, multiplicativeBump);
     isSpeaking = rms > silenceThreshold;
 
     if (isSpeaking) {
@@ -819,6 +822,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
