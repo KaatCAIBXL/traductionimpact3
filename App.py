@@ -1,8 +1,8 @@
-
 from flask_cors import CORS
 from flask import Flask, request, jsonify, send_from_directory, send_file, after_this_request
 import mimetypes
 import tempfile, os, threading, asyncio, textwrap, subprocess, shutil
+import unicodedata
 from typing import Optional
 from openai import OpenAI
 import deepl
@@ -83,6 +83,43 @@ SUPPORTED_WHISPER_EXTENSIONS = {
     ".wav",
     ".webm",
 }
+
+
+def _normalize_language_key(code: Optional[str]) -> str:
+    if not code:
+        return ""
+
+    normalized = unicodedata.normalize("NFKD", code)
+    ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
+    return ascii_only.strip().lower()
+
+
+WHISPER_LANGUAGE_OVERRIDES = {
+    "lingala": "ln",
+    "kituba": "kg",
+    "kikongo": "kg",
+    "tshiluba": "lu",
+    "tshi-luba": "lu",
+    "baloue": None,
+    "dioula": None,
+}
+
+
+def map_whisper_language_hint(code: Optional[str]) -> Optional[str]:
+    key = _normalize_language_key(code)
+    if not key:
+        return None
+
+    if key in WHISPER_LANGUAGE_OVERRIDES:
+        return WHISPER_LANGUAGE_OVERRIDES[key]
+
+    if len(key) == 2:
+        return key
+
+    if key.startswith("en-"):
+        return "en"
+
+    return None
 
 # ---------------------------------------------------------------------home page
 
@@ -441,16 +478,13 @@ def vertaal_audio():
     bron_taal = request.form.get("from", "fr").lower()
     doel_taal = request.form.get("to", "nl").lower()
     enkel_tekst = request.form.get("textOnly", "false") == "true"
+    whisper_language_hint = map_whisper_language_hint(bron_taal)
 
     temp_input_path = None
     audio_path = None
     converted_path = None
 
-    if openai_client is None:
-        return (
-            jsonify({"error": "OpenAI API-sleutel ontbreekt of client kon niet initialiseren."}),
-            503,
-        )
+    
 
     try:
         suffix = _determine_temp_suffix(audio_file)
@@ -481,12 +515,36 @@ def vertaal_audio():
 
         transcript_response = None
         transcript_error = None
+        
 
         def _transcribe_with_whisper(path):
-            with open(path, "rb") as af:
-                return openai_client.audio.transcriptions.create(
-                    model="whisper-1", file=af, language=bron_taal
+            def _call(include_language_hint: bool):
+                with open(path, "rb") as af:
+                    request_kwargs = {
+                        "model": "whisper-1",
+                        "file": af,
+                    }
+
+                    if include_language_hint and whisper_language_hint:
+                        request_kwargs["language"] = whisper_language_hint
+
+                    return openai_client.audio.transcriptions.create(**request_kwargs)
+
+            if not whisper_language_hint:
+                return _call(False)
+
+            try:
+                return _call(True)
+            except Exception as exc:
+                lower_message = str(exc).lower()
+                if "language" not in lower_message:
+                    raise
+
+                print(
+                    "[!] Whisper-taalhint werd geweigerd, probeer automatisch detecteren:",
+                    exc,
                 )
+                return _call(False)
 
         needs_conversion = suffix_lower not in SUPPORTED_WHISPER_EXTENSIONS
 
@@ -634,6 +692,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
