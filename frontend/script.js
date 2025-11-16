@@ -26,6 +26,7 @@ let recorderOptions = null;
 let pendingRecorderRestart = false;
 let isRestartingRecorder = false;
 let cachedMp4InitSegment = null;
+let recorderRequestTimer = null;
 
 const micStatusElement = document.getElementById("micStatus");
 const startButton = document.getElementById("start");
@@ -145,6 +146,8 @@ function releaseAudioResources() {
     clearInterval(intervalId);
     intervalId = null;
   }
+
+  stopRecorderDataPump();
 
   if (audioContext && typeof audioContext.close === "function") {
     audioContext.close().catch(() => {});
@@ -571,10 +574,42 @@ function initializeMediaRecorder(stream, optionsOverride) {
   recorder.addEventListener("dataavailable", handleDataAvailable);
 
   recorder.start(CHUNK_INTERVAL_MS);
+  ensureRecorderDataPump(recorder);
   mediaRecorder = recorder;
   return recorder;
 }
 
+function stopRecorderDataPump() {
+  if (recorderRequestTimer) {
+    clearInterval(recorderRequestTimer);
+    recorderRequestTimer = null;
+  }
+}
+
+function ensureRecorderDataPump(recorder) {
+  stopRecorderDataPump();
+  if (!recorder) {
+    return;
+  }
+
+  recorderRequestTimer = setInterval(() => {
+    if (!recorder || recorder.state !== "recording") {
+      return;
+    }
+
+    if (isPaused) {
+      return;
+    }
+
+    try {
+      recorder.requestData();
+    } catch (error) {
+      console.warn("Kon recordergegevens niet opvragen:", error);
+      stopRecorderDataPump();
+    }
+  }, CHUNK_INTERVAL_MS);
+}
+  
 function scheduleRecorderRestart() {
   if (!mediaRecorder || mediaRecorder.state === "inactive") {
     return;
@@ -823,6 +858,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
