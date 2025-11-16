@@ -26,6 +26,7 @@ let recorderOptions = null;
 let pendingRecorderRestart = false;
 let isRestartingRecorder = false;
 let cachedMp4InitSegment = null;
+let cachedWebmHeader = null;
 let recorderRequestTimer = null;
 
 const micStatusElement = document.getElementById("micStatus");
@@ -405,6 +406,39 @@ async function extractMp4InitSegment(blob) {
 
   return null;
 }
+function findByteSequence(haystack, needle) {
+  if (!haystack || !needle || !needle.length || haystack.length < needle.length) {
+    return -1;
+  }
+
+  outer: for (let i = 0; i <= haystack.length - needle.length; i += 1) {
+    for (let j = 0; j < needle.length; j += 1) {
+      if (haystack[i + j] !== needle[j]) {
+        continue outer;
+      }
+    }
+    return i;
+  }
+
+  return -1;
+}
+
+function extractWebmHeaderBytes(uint8Array) {
+  if (!uint8Array || uint8Array.length < 4) {
+    return null;
+  }
+
+  const CLUSTER_ID = [0x1f, 0x43, 0xb6, 0x75];
+  const clusterIndex = findByteSequence(uint8Array, CLUSTER_ID);
+
+  if (clusterIndex > 0) {
+    const sliceEnd = Math.min(clusterIndex, MAX_INIT_SEGMENT_BYTES);
+    return uint8Array.slice(0, sliceEnd).buffer;
+  }
+
+  const fallbackEnd = Math.min(uint8Array.length, MAX_INIT_SEGMENT_BYTES);
+  return uint8Array.slice(0, fallbackEnd).buffer;
+}
 
 async function ensureChunkHasContainerHeader(chunk, rawMimeType = "") {
   if (!chunk || !chunk.size) {
@@ -435,13 +469,47 @@ async function ensureChunkHasContainerHeader(chunk, rawMimeType = "") {
         return new Blob([combined], { type: "audio/mp4" });
       } catch (error) {
         console.warn("Kon mp4-fragment niet samenvoegen met init-segment:", error);
+
       }
+    }
+  }
+
+  if (cleanMimeType === "audio/webm" || cleanMimeType === "video/webm") {
+    try {
+      const buffer = await chunk.arrayBuffer();
+      const uint8 = new Uint8Array(buffer);
+
+      const hasEbmlHeader =
+        uint8.length >= 4 &&
+        uint8[0] === 0x1a &&
+        uint8[1] === 0x45 &&
+        uint8[2] === 0xdf &&
+        uint8[3] === 0xa3;
+
+      if (hasEbmlHeader) {
+        const headerBytes = extractWebmHeaderBytes(uint8);
+        if (headerBytes) {
+          cachedWebmHeader = headerBytes;
+        }
+        return chunk;
+      }
+
+      if (cachedWebmHeader) {
+        const cachedHeaderArray = new Uint8Array(cachedWebmHeader);
+        const combined = new Uint8Array(
+          cachedHeaderArray.byteLength + uint8.byteLength
+        );
+        combined.set(cachedHeaderArray, 0);
+        combined.set(uint8, cachedHeaderArray.byteLength);
+        return new Blob([combined], { type: cleanMimeType });
+      }
+    } catch (error) {
+      console.warn("Kon webm-header niet reconstrueren:", error);
     }
   }
 
   return chunk;
 }
-
 async function resolveMimeType(chunks, fallbackTypes = []) {
   const chunkWithType = chunks.find(
     (chunk) => chunk && typeof chunk.type === "string" && chunk.type
@@ -858,6 +926,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
