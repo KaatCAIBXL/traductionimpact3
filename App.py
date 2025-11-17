@@ -4,6 +4,7 @@ import mimetypes
 import tempfile, os, threading, asyncio, textwrap, subprocess, shutil
 import unicodedata
 from typing import Optional
+from types import SimpleNamespace
 from openai import OpenAI
 import deepl
 from flask_cors import CORS
@@ -14,6 +15,11 @@ from pydub import AudioSegment, silence
 from pydub.exceptions import CouldntDecodeError
 from pydub.effects import normalize, low_pass_filter
 import edge_tts
+
+try:
+    import whisper
+except ImportError:
+    whisper = None
 
 
 
@@ -31,6 +37,10 @@ if OPENAI_API_KEY:
         openai_client = OpenAI(api_key=OPENAI_API_KEY)
     except Exception as exc:
         print(f"[!] Kon OpenAI client niet initialiseren: {exc}")
+
+LOCAL_WHISPER_MODEL_NAME = os.getenv("LOCAL_WHISPER_MODEL", "base")
+_local_whisper_model = None
+_local_whisper_lock = threading.Lock()
 
 deepl_translator = None
 if DEEPL_API_KEY:
@@ -170,6 +180,32 @@ def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
 
 
 #-------------------------------------------------------------------------correcting with whisper
+def _ensure_local_whisper_model():
+    if whisper is None:
+        raise RuntimeError(
+            "Local Whisper fallback is niet beschikbaar: installeer het pakket 'openai-whisper'"
+        )
+
+    global _local_whisper_model
+    with _local_whisper_lock:
+        if _local_whisper_model is None:
+            print(f"[i] Whisper API niet beschikbaar → laad lokaal model '{LOCAL_WHISPER_MODEL_NAME}'")
+            _local_whisper_model = whisper.load_model(LOCAL_WHISPER_MODEL_NAME)
+
+    return _local_whisper_model
+
+
+def _transcribe_with_local_whisper(path: str, *, language_hint: Optional[str] = None):
+    model = _ensure_local_whisper_model()
+    options = {"fp16": False}
+    if language_hint:
+        options["language"] = language_hint
+
+    result = model.transcribe(path, **options)
+    text = result.get("text", "") if isinstance(result, dict) else ""
+    return SimpleNamespace(text=text)
+
+
 @app.route("/api/transcribe", methods=["POST"])
 def transcribe_audio():
     if "audio" not in request.files:
@@ -177,10 +213,14 @@ def transcribe_audio():
 
     audio_file = request.files["audio"]
     taalcode = request.form.get("lang", "fr")
+    language_hint = map_whisper_language_hint(taalcode)
 
-    if openai_client is None:
-        return jsonify({"error": "OpenAI API-sleutel ontbreekt of client kon niet initialiseren."}), 503
+    if openai_client is None and whisper is None:
+        return jsonify(
+            {"error": "Geen OpenAI API en geen lokaal Whisper-model beschikbaar."}
+        ), 503
 
+    audio_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             audio_file.save(tmp.name)
@@ -192,14 +232,32 @@ def transcribe_audio():
         trimmed = silence.strip_silence(sound, silence_thresh=-40)
         trimmed.export(audio_path, format="wav")
 
-        with open(audio_path, "rb") as af:
-            transcript_response = openai_client.audio.transcriptions.create(
-                model="whisper-1", file=af, language=taalcode
+        transcript_response = None
+        if openai_client is not None:
+            try:
+                with open(audio_path, "rb") as af:
+                    request_kwargs = {"model": "whisper-1", "file": af}
+                    if language_hint:
+                        request_kwargs["language"] = language_hint
+
+                    transcript_response = openai_client.audio.transcriptions.create(
+                        **request_kwargs
+                    )
+            except Exception as exc:
+                print(
+                    "[!] Whisper API niet beschikbaar voor /api/transcribe, probeer lokaal fallback:",
+                    exc,
+                )
+
+        if transcript_response is None:
+            transcript_response = _transcribe_with_local_whisper(
+                audio_path, language_hint=language_hint
             )
 
         tekst = transcript_response.text.strip()
         corrected = corrigeer_zin_met_context(tekst, context_zinnen)
         context_zinnen.append(corrected)
+
 
         return jsonify({"recognized": tekst, "corrected": corrected})
 
@@ -484,6 +542,22 @@ def vertaal_audio():
     audio_path = None
     converted_path = None
 
+    if (
+        doel_taal != bron_taal
+        and deepl_translator is None
+        and openai_client is None
+    ):
+        return (
+            jsonify(
+                {
+                    "error": "Geen DeepL- of OpenAI-API geconfigureerd, vertalen is niet mogelijk.",
+                    "errorCode": "missing_translation_api",
+                }
+            ),
+            503,
+        )
+
+
     
 
     try:
@@ -515,10 +589,12 @@ def vertaal_audio():
 
         transcript_response = None
         transcript_error = None
-        
 
         def _transcribe_with_whisper(path):
-            def _call(include_language_hint: bool):
+            def _call_remote(include_language_hint: bool):
+                if openai_client is None:
+                    raise RuntimeError("Geen OpenAI-client beschikbaar")
+
                 with open(path, "rb") as af:
                     request_kwargs = {
                         "model": "whisper-1",
@@ -530,21 +606,44 @@ def vertaal_audio():
 
                     return openai_client.audio.transcriptions.create(**request_kwargs)
 
-            if not whisper_language_hint:
-                return _call(False)
+            def _call_with_language_hint():
+                if not whisper_language_hint:
+                    return _call_remote(False)
 
-            try:
-                return _call(True)
-            except Exception as exc:
-                lower_message = str(exc).lower()
-                if "language" not in lower_message:
-                    raise
+                try:
+                    return _call_remote(True)
+                except Exception as exc:
+                    lower_message = str(exc).lower()
+                    if "language" not in lower_message:
+                        raise
 
-                print(
-                    "[!] Whisper-taalhint werd geweigerd, probeer automatisch detecteren:",
-                    exc,
-                )
-                return _call(False)
+                    print(
+                        "[!] Whisper-taalhint werd geweigerd, probeer automatisch detecteren:",
+                        exc,
+                    )
+                    return _call_remote(False)
+
+            def _call_with_fallback():
+                if openai_client is None:
+                    return _transcribe_with_local_whisper(
+                        path, language_hint=whisper_language_hint
+                    )
+
+                try:
+                    return _call_with_language_hint()
+                except Exception as exc:
+                    print(
+                        "[!] Whisper API faalde, val terug op lokaal model indien beschikbaar:",
+                        exc,
+                    )
+                    if whisper is None:
+                        raise
+                    return _transcribe_with_local_whisper(
+                        path, language_hint=whisper_language_hint
+                    )
+
+            return _call_with_fallback()
+
 
         needs_conversion = suffix_lower not in SUPPORTED_WHISPER_EXTENSIONS
 
@@ -692,6 +791,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
