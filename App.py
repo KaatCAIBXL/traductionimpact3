@@ -92,6 +92,8 @@ SUPPORTED_WHISPER_EXTENSIONS = {
     ".m4a",
     ".wav",
     ".webm",
+    ".aac",
+    ".amr",
 }
 
 
@@ -357,15 +359,18 @@ def _sniff_file_extension(path: str) -> Optional[str]:
 
     if header.startswith(b"\x1aE\xdf\xa3"):
         return "webm"
-
+        
     if header[4:8] == b"ftyp":
         return "mp4"
-
+        
     if header.startswith(b"OggS"):
         return "ogg"
 
     if header[:4] == b"RIFF" and header[8:12] == b"WAVE":
         return "wav"
+
+    if header.startswith(b"#!AMR"):
+        return "amr"
 
     return None
 
@@ -452,6 +457,7 @@ def _determine_temp_suffix(audio_file):
         ".opus",
         ".flac",
         ".aac",
+        ".amr",
         ".3gp",
         ".3g2",
     }
@@ -472,9 +478,13 @@ def _determine_temp_suffix(audio_file):
         "audio/mp3": ".mp3",
         "audio/mp4": ".mp4",
         "video/mp4": ".mp4",
+        "audio/aac": ".aac",
+        "audio/aacp": ".aac",
         "audio/wav": ".wav",
         "audio/x-wav": ".wav",
         "audio/x-m4a": ".m4a",
+        "audio/amr": ".amr",
+        "audio/amr-wb": ".amr",
         "audio/3gpp": ".3gp",
         "audio/3gpp2": ".3g2",
         "audio/ogg; codecs=opus": ".ogg",
@@ -791,6 +801,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
