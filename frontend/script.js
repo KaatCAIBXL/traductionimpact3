@@ -44,6 +44,7 @@ let micStatusState = "idle";
 const CHUNK_INTERVAL_MS = 1500;
 const SILENCE_FLUSH_MS = 1200;
 const MAX_BUFFER_MS = 6000;
+const MIN_VALID_AUDIO_BYTES = 1024;
 // Zorg dat elke blob die we naar de backend sturen opnieuw een container-header bevat
 // (Safari/Chrome leveren anders "headerloze" segmenten waardoor Whisper niets kan).
 const FORCE_RECORDER_RESTART_AFTER_UPLOAD = true;
@@ -729,10 +730,23 @@ async function handleDataAvailable(event) {
     return;
   }
 
-  const recorder = event.target || mediaRecorder;
-    const rawMimeType =
+const recorder = event.target || mediaRecorder;
+  const rawMimeType =
     chunkMimeType || recorder?.mimeType || mediaRecorder?.mimeType || "";
   const detectionChunks = bufferChunks.slice();
+  const totalBytes = detectionChunks.reduce(
+    (sum, chunk) => sum + (chunk?.size || 0),
+    0
+  );
+
+  if (totalBytes < MIN_VALID_AUDIO_BYTES) {
+    // Safari levert soms losse containerheaders zonder audiogegevens aan. Die
+    // veroorzaken "File ended prematurely"-fouten bij ffmpeg. Wacht tot er
+    // effectieve audio binnenloopt zodat we de header samen met echte data
+    // kunnen versturen.
+    return;
+  }
+
   bufferChunks = [];
   bufferedDurationMs = 0;
 
@@ -936,6 +950,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
