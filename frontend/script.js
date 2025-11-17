@@ -284,19 +284,27 @@ function sanitizeMimeType(rawType) {
 }
 
 function getRecorderOptions() {
-  // Eerste keuze: WebM + Opus
-  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-    return { mimeType: "audio/webm;codecs=opus" };
+  const preferredTypes = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+    "audio/3gpp",
+    "audio/aac",
+    "audio/wav",
+  ];
+
+  for (const candidate of preferredTypes) {
+    if (MediaRecorder.isTypeSupported(candidate)) {
+      if (candidate !== "audio/webm" && candidate !== "audio/webm;codecs=opus") {
+        console.warn(`⚠️ Schakel MediaRecorder over naar ${candidate} (webm niet ondersteund)`);
+      }
+      return { mimeType: candidate };
+    }
   }
 
-  // Tweede keuze: WebM algemeen
-  if (MediaRecorder.isTypeSupported("audio/webm")) {
-    return { mimeType: "audio/webm" };
-  }
-
-  // Safari fallback → WAV
-  console.warn("⚠️ Browser ondersteunt geen WebM → overschakelen naar WAV");
-  return { mimeType: "audio/wav" };
+  console.warn("⚠️ Geen bekende mimeType ondersteund — laat browser standaard kiezen");
+  return {};
 }
 
 
@@ -950,6 +958,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
