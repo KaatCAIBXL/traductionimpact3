@@ -777,14 +777,24 @@ async function handleDataAvailable(event) {
     const response = await fetch("/api/translate", { method: "POST", body: formData });
     const data = await response.json();
 
-    if (data.error) {
-      console.error("Vertaalfout:", data.error);
+    if (!response.ok || data.error) {
+      const foutmelding = data?.error || `Serverfout (${response.status})`;
+      console.error("Vertaalfout:", foutmelding);
+      setMicStatus("error", foutmelding);
+      if (data?.errorCode === "missing_translation_api") {
+        alert(
+          "❌ Geen vertaal-API's geconfigureerd. Vul een DEEPL_API_KEY of OPENAI_API_KEY in op de server."
+        );
+      } else {
+        alert("❌ Vertaalfout: " + foutmelding);
+      }
     } else {
       const segment = {
         recognized: data.recognized || "",
         corrected: data.corrected || data.recognized || "",
         translation: data.translation || "",
       };
+
 
       sessionSegments.push(segment);
       renderLatestSegments();
@@ -926,6 +936,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
