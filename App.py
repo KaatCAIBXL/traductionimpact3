@@ -7,9 +7,9 @@ from typing import Optional
 from types import SimpleNamespace
 from openai import OpenAI
 import deepl
-from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import datetime
+import re
 
 from pydub import AudioSegment, silence
 from pydub.exceptions import CouldntDecodeError
@@ -52,6 +52,27 @@ if DEEPL_API_KEY:
 vorige_zinnen = []
 context_zinnen = []
 
+ONGEWENSTE_TRANSCRIPTIES = [
+    "ondertitels ingediend door de amara.org gemeenschap",
+    "tv gelderland 2023",
+    "bedankt om te luisteren",
+]
+
+
+def verwijder_ongewenste_transcripties(tekst: str) -> str:
+    if not tekst:
+        return tekst
+
+    opgeschoond = tekst
+    for fragment in ONGEWENSTE_TRANSCRIPTIES:
+        patroon = re.compile(
+            rf"\s*['\"“”‘’]*{re.escape(fragment)}['\"“”‘’]*\s*",
+            flags=re.IGNORECASE,
+        )
+        opgeschoond = patroon.sub(" ", opgeschoond)
+
+    return re.sub(r"\s{2,}", " ", opgeschoond).strip()
+
 ENKEL_TEKST_MODUS = False
 
 DEFAULT_STEM = "en-US-AriaNeural"
@@ -59,29 +80,10 @@ STEMMAP = {
     "nl": "nl-NL-ColetteNeural",
     "fr": "fr-FR-DeniseNeural",
     "en": DEFAULT_STEM,
-    "de": "de-DE-KatjaNeural",
     "es": "es-ES-ElviraNeural",
     "pt": "pt-BR-FranciscaNeural",
     "fi": "fi-FI-SelmaNeural",
     "sv": "sv-SE-SofieNeural",
-    "no": "nb-NO-PernilleNeural",
-    "pl": "pl-PL-AgnieszkaNeural",
-    "ru": "ru-RU-SvetlanaNeural",
-    "tr": "tr-TR-EmelNeural",
-    "ja": "ja-JP-NanamiNeural",
-    "zh": "zh-CN-XiaoxiaoNeural",
-    "ar": "ar-EG-SalmaNeural",
-    "hi": "hi-IN-SwaraNeural",
-    "id": "id-ID-GadisNeural",
-    "ms": "ms-MY-YasminNeural",
-    "sw": "sw-KE-ZuriNeural",
-    "am": "am-ET-MekdesNeural",
-    "lingala": "sw-KE-ZuriNeural",
-    "tshiluba": "sw-KE-ZuriNeural",
-    "baloué": "sw-KE-ZuriNeural",
-    "kikongo": "sw-KE-ZuriNeural",
-    "malagasy": "sw-KE-ZuriNeural",
-    "dioula": "sw-KE-ZuriNeural",
 }
 
 SUPPORTED_WHISPER_EXTENSIONS = {
@@ -234,6 +236,7 @@ def transcribe_audio():
         trimmed = silence.strip_silence(sound, silence_thresh=-40)
         trimmed.export(audio_path, format="wav")
 
+        
         transcript_response = None
         if openai_client is not None:
             try:
@@ -256,11 +259,16 @@ def transcribe_audio():
                 audio_path, language_hint=language_hint
             )
 
-        tekst = transcript_response.text.strip()
-        corrected = corrigeer_zin_met_context(tekst, context_zinnen)
-        context_zinnen.append(corrected)
+        ruwe_tekst = transcript_response.text.strip()
+        tekst = verwijder_ongewenste_transcripties(ruwe_tekst)
 
-
+        if tekst:
+            corrected = corrigeer_zin_met_context(tekst, context_zinnen)
+            corrected = verwijder_ongewenste_transcripties(corrected)
+            context_zinnen.append(corrected)
+        else:
+            corrected = ""
+        
         return jsonify({"recognized": tekst, "corrected": corrected})
 
     except Exception as e:
@@ -706,54 +714,76 @@ def vertaal_audio():
             print(f"[!] {foutmelding}")
             return jsonify({"error": foutmelding}), 502
 
-        tekst = transcript_response.text.strip()
-        if not tekst:
+       ruwe_tekst = transcript_response.text.strip()
+        if not ruwe_tekst:
             return jsonify({"error": "Geen spraak gedetecteerd."}), 400
 
+        tekst = verwijder_ongewenste_transcripties(ruwe_tekst)
+
         # ✍️ Contextuele correctie
-        verbeterde_zin = corrigeer_zin_met_context(tekst, vorige_zinnen)
-        vorige_zinnen.append(verbeterde_zin)
+        if tekst:
+            verbeterde_zin = corrigeer_zin_met_context(tekst, vorige_zinnen)
+            verbeterde_zin = verwijder_ongewenste_transcripties(verbeterde_zin)
+            vorige_zinnen.append(verbeterde_zin)
+        else:
+            verbeterde_zin = ""
+ 
 
         # 🌍 Vertaling
-        deepl_supported = {
-            "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hu", "id",
-            "it", "ja", "ko", "lt", "lv", "nb", "nl", "pl", "pt", "ro", "ru", "sk",
-            "sl", "sv", "tr", "uk", "zh"
-        }
+        vertaling = ""
+        if verbeterde_zin:
+            deepl_supported = {
+                "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hu", "id",
+                "it", "ja", "ko", "lt", "lv", "nb", "nl", "pl", "pt", "ro", "ru", "sk",
+                "sl", "sv", "tr", "uk", "zh"
+            }
 
-        if doel_taal in deepl_supported and deepl_translator is not None:
-            try:
-                doel_taal_code = map_vertaling_taalcode_deepl(doel_taal)
-                result = deepl_translator.translate_text(
-                    verbeterde_zin, source_lang=bron_taal, target_lang=doel_taal_code
-                )
-                vertaling = result.text
-            except Exception:
-                vertaling = verbeterde_zin  # fallback bij DeepL-fout
+            if doel_taal in deepl_supported and deepl_translator is not None:
+                try:
+                    doel_taal_code = map_vertaling_taalcode_deepl(doel_taal)
+                    result = deepl_translator.translate_text(
+                        verbeterde_zin, source_lang=bron_taal, target_lang=doel_taal_code
+                    )
+                    vertaling = result.text
+                except Exception:
+                    vertaling = verbeterde_zin  # fallback bij DeepL-fout
 
-        elif doel_taal == "tshiluba":
-            try:
-                with open("instructies_Tshiluba.txt", "r", encoding="utf-8") as f:
-                    insTsh = f.read()
-            except FileNotFoundError:
-                insTsh = "(Geen instructies gevonden.)"
+            elif doel_taal == "tshiluba":
+                try:
+                    with open("instructies_Tshiluba.txt", "r", encoding="utf-8") as f:
+                        insTsh = f.read()
+                except FileNotFoundError:
+                    insTsh = "(Geen instructies gevonden.)"
 
-            prompt = textwrap.dedent(f"""
-                Vertaal deze zin van {bron_taal} naar Tshiluba: {verbeterde_zin}
-                MAAR als er een woord is dat je niet kent, kijk dan naar deze lijst: {insTsh}
-                Als je het woord nog steeds niet kent, kies een gelijkaardig woord met vergelijkbare betekenis.
-                Als dat ook niet lukt, vertaal dan naar het Frans als fallback.
-            """)
+                prompt = textwrap.dedent(f"""
+                    Vertaal deze zin van {bron_taal} naar Tshiluba: {verbeterde_zin}
+                    MAAR als er een woord is dat je niet kent, kijk dan naar deze lijst: {insTsh}
+                    Als je het woord nog steeds niet kent, kies een gelijkaardig woord met vergelijkbare betekenis.
+                    Als dat ook niet lukt, vertaal dan naar het Frans als fallback.
+                """)
 
-            if openai_client is None:
-                vertaling = verbeterde_zin
+                if openai_client is None:
+                    vertaling = verbeterde_zin
+                else:
+                    response = openai_client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3,
+                    )
+                    vertaling = response.choices[0].message.content.strip()
+
             else:
-                response = openai_client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3,
-                )
-                vertaling = response.choices[0].message.content.strip()
+                # Fallback naar GPT voor andere niet-DeepL talen
+                prompt = f"Vertaal deze zin van {bron_taal} naar {doel_taal}: {verbeterde_zin}"
+                if openai_client is None:
+                    vertaling = verbeterde_zin
+                else:
+                    response = openai_client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3,
+                    )
+                    vertaling = response.choices[0].message.content.strip()
 
         else:
             # Fallback naar GPT voor andere niet-DeepL talen
@@ -801,6 +831,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
