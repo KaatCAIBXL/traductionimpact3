@@ -28,6 +28,8 @@ let isRestartingRecorder = false;
 let cachedMp4InitSegment = null;
 let cachedWebmHeader = null;
 let recorderRequestTimer = null;
+let pendingSilenceFlush = false;
+let pendingSentence = null;
 
 const micStatusElement = document.getElementById("micStatus");
 const startButton = document.getElementById("start");
@@ -50,6 +52,92 @@ const MIN_VALID_AUDIO_BYTES = 1024;
 const FORCE_RECORDER_RESTART_AFTER_UPLOAD = true;
 const MAX_INIT_SEGMENT_BYTES = 128 * 1024;
 let sessionSegments = [];
+
+function resetPendingSentence() {
+  pendingSentence = null;
+}
+
+function textJoin(left = "", right = "") {
+  const a = (left || "").trimEnd();
+  const b = (right || "").trimStart();
+
+  if (!a) return b;
+  if (!b) return a;
+
+  const needsSpace =
+    !/[\s\-–—(\[]$/.test(a) && !/^[,.;:!?…)]/.test(b);
+
+  return needsSpace ? `${a} ${b}` : `${a}${b}`;
+}
+
+function sentenceLooksComplete(text = "") {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return /[.!?…](?:['")\]]*|\s*)$/.test(trimmed);
+}
+
+function finalizePendingSentence(force = false) {
+  if (!pendingSentence) {
+    return;
+  }
+
+  const cleaned = {
+    recognized: (pendingSentence.recognized || "").trim(),
+    corrected: (pendingSentence.corrected || "").trim(),
+    translation: (pendingSentence.translation || "").trim(),
+  };
+
+  if (!cleaned.recognized && !cleaned.corrected && !cleaned.translation) {
+    pendingSentence = null;
+    return;
+  }
+
+  if (!force && !sentenceLooksComplete(cleaned.corrected) && !sentenceLooksComplete(cleaned.translation)) {
+    return;
+  }
+
+  pendingSentence = null;
+  sessionSegments.push(cleaned);
+  renderLatestSegments();
+
+  if (!textOnlyCheckbox.checked && cleaned.translation) {
+    spreekVertaling(cleaned.translation, targetLanguageSelect.value);
+  }
+}
+
+function queueSegmentForOutput(segment) {
+  const hasContent =
+    (segment.recognized && segment.recognized.trim()) ||
+    (segment.corrected && segment.corrected.trim()) ||
+    (segment.translation && segment.translation.trim());
+
+  if (!hasContent) {
+    if (segment.silenceDetected) {
+      finalizePendingSentence(true);
+    }
+    return;
+  }
+
+  if (!pendingSentence) {
+    pendingSentence = { ...segment };
+  } else {
+    pendingSentence.recognized = textJoin(pendingSentence.recognized, segment.recognized);
+    pendingSentence.corrected = textJoin(pendingSentence.corrected, segment.corrected);
+    pendingSentence.translation = textJoin(pendingSentence.translation, segment.translation);
+  }
+
+  if (
+    sentenceLooksComplete(pendingSentence.corrected) ||
+    sentenceLooksComplete(pendingSentence.translation) ||
+    segment.forceFinalize
+  ) {
+    const force = Boolean(segment.forceFinalize);
+    finalizePendingSentence(force);
+  }
+}
 
 function escapeHtml(text) {
   const replacements = {
@@ -958,6 +1046,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
