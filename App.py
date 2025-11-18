@@ -199,6 +199,7 @@ opdracht vier: als je "Ondertitels ingediend door de amara.org gemeenschap" tege
 
 Geef alleen de gecorrigeerde zin terug die natuurlijk klinkt, zonder uitleg.
 
+Geef NOOIT opmerkingen. Enkel vertaling of niets. 
 Context: "{context}"
 Nieuwe zin: "{nieuwe_zin}"
 """
@@ -879,6 +880,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
