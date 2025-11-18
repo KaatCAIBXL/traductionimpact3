@@ -195,7 +195,8 @@ Opdracht 2: Als je een Bijbeltekst uit een erkende vertaling herkent, herstel di
 Opdracht 3: Als de zin een gebed bevat, pas de regels toe uit:
 {instructies_correctie}
 
-opdracht vier: als je "Ondertitels ingediend door de amara.org gemeenschap" tegenkomt in eender welke taal, vervang dit door "". Met andere woorden. Dit moet weg.
+opdracht vier: als je een zin "Ondertitels ..." of "...bedankt om te ..." tegenkomt in eender welke taal, vervang dit door "". Met andere woorden. Dit moet weg.
+odracht vijf: als je een '.' tegenkomt, laat het zo, vind nooit extra zinnen uit!
 
 Geef alleen de gecorrigeerde zin terug die natuurlijk klinkt, zonder uitleg.
 
@@ -880,6 +881,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
