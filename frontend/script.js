@@ -223,11 +223,29 @@ function renderLatestSegments() {
 }
 
 renderLatestSegments();
-
 function stopActiveStream() {
   if (activeStream) {
     activeStream.getTracks().forEach((track) => track.stop());
     activeStream = null;
+  }
+}
+
+function triggerSilenceFlush() {
+  if (!mediaRecorder || mediaRecorder.state !== "recording") {
+    return;
+  }
+
+  if (pendingSilenceFlush) {
+    return;
+  }
+
+  pendingSilenceFlush = true;
+
+  try {
+    mediaRecorder.requestData();
+  } catch (error) {
+    pendingSilenceFlush = false;
+    console.warn("Kon recorderflush niet aanvragen:", error);
   }
 }
 
@@ -238,6 +256,10 @@ function releaseAudioResources() {
   }
 
   stopRecorderDataPump();
+
+  pendingSilenceFlush = false;
+  resetPendingSentence();
+
 
   if (audioContext && typeof audioContext.close === "function") {
     audioContext.close().catch(() => {});
@@ -334,6 +356,11 @@ async function setupAudioDetection(stream) {
       } else if (!isSpeaking && previousSpeakingState) {
         setMicStatus("listening");
       }
+    }
+
+    const silenceDuration = Date.now() - lastSpeechTime;
+    if (!isSpeaking && silenceDuration >= SILENCE_FLUSH_MS) {
+      triggerSilenceFlush();
     }
 
     previousSpeakingState = isSpeaking;
@@ -818,15 +845,20 @@ async function handleDataAvailable(event) {
   }
 
 
+  const forceFlush = pendingSilenceFlush;
+  if (pendingSilenceFlush) {
+    pendingSilenceFlush = false;
+  }
+
   const shouldFlush =
     bufferChunks.length > 0 &&
-    (stilte >= SILENCE_FLUSH_MS || bufferedDurationMs >= MAX_BUFFER_MS);
+    (forceFlush || stilte >= SILENCE_FLUSH_MS || bufferedDurationMs >= MAX_BUFFER_MS);
 
   if (!shouldFlush) {
     return;
   }
 
-const recorder = event.target || mediaRecorder;
+  const recorder = event.target || mediaRecorder;
   const rawMimeType =
     chunkMimeType || recorder?.mimeType || mediaRecorder?.mimeType || "";
   const detectionChunks = bufferChunks.slice();
@@ -855,6 +887,8 @@ const recorder = event.target || mediaRecorder;
     ])) || "audio/webm";
   const blob = new Blob(detectionChunks, { type: cleanMimeType });
   const extension = mimeTypeToExtension(cleanMimeType);
+
+  const flushedDueToSilence = forceFlush;
 
   const formData = new FormData();
   formData.append("audio", blob, `spraak.${extension}`);
@@ -899,19 +933,15 @@ const recorder = event.target || mediaRecorder;
         alert("❌ Vertaalfout: " + foutmelding);
       }
     } else {
-      const segment = {
+const segment = {
         recognized: data.recognized || "",
         corrected: data.corrected || data.recognized || "",
         translation: data.translation || "",
+        silenceDetected: Boolean(data.silenceDetected),
+        forceFinalize: flushedDueToSilence,
       };
 
-
-      sessionSegments.push(segment);
-      renderLatestSegments();
-
-      if (!textOnlyCheckbox.checked && segment.translation) {
-        spreekVertaling(segment.translation, targetLanguageSelect.value);
-      }
+      queueSegmentForOutput(segment);
     }
   } catch (error) {
     console.error("Fout bij versturen van audio:", error);
@@ -934,6 +964,7 @@ if (startButton) {
     bufferChunks = [];
     bufferedDurationMs = 0;
     isSpeaking = false;
+    resetPendingSentence();
     sessionSegments = [];
     renderLatestSegments();
 
@@ -978,6 +1009,7 @@ if (pauseButton) {
     if (!mediaRecorder) return;
 
     if (!isPaused && mediaRecorder.state === "recording") {
+      triggerSilenceFlush();
       mediaRecorder.pause();
       isPaused = true;
       pauseButton.innerText = "▶️ continue ▶️";
@@ -1013,6 +1045,7 @@ if (stopButton) {
     bufferChunks = [];
     bufferedDurationMs = 0;
     isSpeaking = false;
+    finalizePendingSentence(true);
     downloadSessionDocument();
     setMicStatus("idle");
   };
@@ -1046,6 +1079,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
