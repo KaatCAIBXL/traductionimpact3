@@ -810,17 +810,9 @@ def vertaal_audio():
                     vertaling = response.choices[0].message.content.strip()
 
         else:
-            # Fallback naar GPT voor andere niet-DeepL talen
-            prompt = f"Vertaal deze zin van {bron_taal} naar {doel_taal}: {verbeterde_zin}"
-            if openai_client is None:
-                vertaling = verbeterde_zin
-            else:
-                response = openai_client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3,
-                )
-                vertaling = response.choices[0].message.content.strip()
+            # Er is geen tekst om te vertalen (bv. stilte of ruis); houd het leeg zodat
+            # we geen "oei, je hebt niets doorgegeven"-berichten van GPT terugkrijgen.
+            vertaling = ""
 
         # 🔊 Spraakuitvoer (indien niet in tekst-only modus)
         threading.Thread(
@@ -855,6 +847,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
