@@ -54,8 +54,15 @@ context_zinnen = []
 
 ONGEWENSTE_TRANSCRIPTIES = [
     "ondertitels ingediend door de amara.org gemeenschap",
-    "tv gelderland 2023",
+    "Ondertitels ingediend door de amara.org gemeenschap",
+    "Ondertitels ingediend door de amara.org gemeenschap",
+    "Sous-titres soumis par la communauté amara.org.",
+    "TV GELDERLAND 2021",
+    "Sous-titres soumis par la communauté amara.org",
+    "TV GELDERLAND 2023",
     "bedankt om te luisteren",
+    "bedankt om te kijken",
+    "bedankt om te kijken naar deze video"
 ]
 
 
@@ -234,7 +241,16 @@ def transcribe_audio():
         sound = normalize(sound)
         sound = low_pass_filter(sound, cutoff=3000)
         trimmed = silence.strip_silence(sound, silence_thresh=-40)
+
+        if len(trimmed) == 0:
+            return jsonify({
+                "recognized": "",
+                "corrected": "",
+                "silenceDetected": True,
+            })
+
         trimmed.export(audio_path, format="wav")
+        
 
         
         transcript_response = None
@@ -714,11 +730,19 @@ def vertaal_audio():
             print(f"[!] {foutmelding}")
             return jsonify({"error": foutmelding}), 502
 
-       ruwe_tekst = transcript_response.text.strip()
+        ruwe_tekst = transcript_response.text.strip()
         if not ruwe_tekst:
-            return jsonify({"error": "Geen spraak gedetecteerd."}), 400
+            return jsonify(
+                {
+                    "recognized": "",
+                    "corrected": "",
+                    "translation": "",
+                    "silenceDetected": True,
+                }
+            )
 
         tekst = verwijder_ongewenste_transcripties(ruwe_tekst)
+       
 
         # ✍️ Contextuele correctie
         if tekst:
@@ -831,6 +855,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
