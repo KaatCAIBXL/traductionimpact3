@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify, send_from_directory, send_file, after
 import mimetypes
 import tempfile, os, threading, asyncio, textwrap, subprocess, shutil
 import unicodedata
+from dataclasses import asdict, dataclass
 from typing import Optional
 from types import SimpleNamespace
 from openai import OpenAI
@@ -11,7 +12,8 @@ from dotenv import load_dotenv
 from datetime import datetime
 import re
 
-from pydub import AudioSegment, silence
+from pydub import AudioSegment
+from pydub.silence import detect_nonsilent
 from pydub.exceptions import CouldntDecodeError
 from pydub.effects import normalize, low_pass_filter
 import edge_tts
@@ -105,7 +107,96 @@ SUPPORTED_WHISPER_EXTENSIONS = {
     ".amr",
 }
 
-}
+
+def _to_float(value: Optional[str], default: float) -> float:
+    try:
+        return float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(value: Optional[str], default: int) -> int:
+    try:
+        return int(float(value)) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_bool(value: Optional[str], default: bool) -> bool:
+    if value is None:
+        return default
+    value = value.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+@dataclass
+class AudioPreprocessingConfig:
+    """Configuration options for preparing raw microphone uploads."""
+
+    normalize_audio: bool = True
+    low_pass_cutoff: Optional[int] = 3000
+    silence_threshold_dbfs: float = -40.0
+    min_silence_duration_ms: int = 300
+    silence_padding_ms: int = 120
+
+    @classmethod
+    def from_request(cls, form_data) -> "AudioPreprocessingConfig":
+        normalize_value = form_data.get("normalize")
+        if normalize_value is None:
+            normalize_value = form_data.get("normalizeAudio")
+        cutoff_value = form_data.get("lowPassCutoff")
+        cutoff = _to_int(cutoff_value, 3000) if cutoff_value not in (None, "") else 3000
+        if cutoff is not None and cutoff <= 0:
+            cutoff = None
+        return cls(
+            normalize_audio=_to_bool(normalize_value, True),
+            low_pass_cutoff=cutoff,
+            silence_threshold_dbfs=_to_float(form_data.get("silenceThreshold"), -40.0),
+            min_silence_duration_ms=_to_int(form_data.get("minSilenceMs"), 300),
+            silence_padding_ms=_to_int(form_data.get("silencePaddingMs"), 120),
+        )
+
+
+def _trim_silence(segment: AudioSegment, config: AudioPreprocessingConfig) -> AudioSegment:
+    """Return ``segment`` without leading/trailing silence based on config settings."""
+
+    nonsilent_ranges = detect_nonsilent(
+        segment,
+        min_silence_len=max(config.min_silence_duration_ms, 1),
+        silence_thresh=config.silence_threshold_dbfs,
+    )
+    if not nonsilent_ranges:
+        return AudioSegment.silent(duration=0)
+
+    start = max(nonsilent_ranges[0][0] - config.silence_padding_ms, 0)
+    end = min(nonsilent_ranges[-1][1] + config.silence_padding_ms, len(segment))
+    if start >= end:
+        return AudioSegment.silent(duration=0)
+    return segment[start:end]
+
+
+def _preprocess_audio_file(path: str, config: AudioPreprocessingConfig) -> bool:
+    """Apply normalization, filtering and silence trimming to ``path``.
+
+    Returns ``True`` when speech remains after trimming, otherwise ``False``.
+    """
+
+    sound = AudioSegment.from_file(path)
+    if config.normalize_audio:
+        sound = normalize(sound)
+    if config.low_pass_cutoff:
+        sound = low_pass_filter(sound, cutoff=config.low_pass_cutoff)
+
+    trimmed = _trim_silence(sound, config)
+    if len(trimmed) == 0:
+        return False
+
+    trimmed.export(path, format="wav")
+    return True
 
 
 DEFAULT_GPT_TRANSLATION_MODEL = "gpt-4"
@@ -268,22 +359,17 @@ def transcribe_audio():
             audio_file.save(tmp.name)
             audio_path = tmp.name
 
-        sound = AudioSegment.from_file(audio_path)
-        sound = normalize(sound)
-        sound = low_pass_filter(sound, cutoff=3000)
-        trimmed = silence.strip_silence(sound, silence_thresh=-40)
-
-        if len(trimmed) == 0:
+        preprocess_config = AudioPreprocessingConfig.from_request(request.form)
+        if not _preprocess_audio_file(audio_path, preprocess_config):
             return jsonify({
                 "recognized": "",
                 "corrected": "",
                 "silenceDetected": True,
+                "preprocessing": asdict(preprocess_config),
             })
 
-        trimmed.export(audio_path, format="wav")
-        
 
-        
+
         transcript_response = None
         if openai_client is not None:
             try:
@@ -316,7 +402,13 @@ def transcribe_audio():
         else:
             corrected = ""
         
-        return jsonify({"recognized": tekst, "corrected": corrected})
+        return jsonify(
+            {
+                "recognized": tekst,
+                "corrected": corrected,
+                "preprocessing": asdict(preprocess_config),
+            }
+        )
 
     except Exception as e:
         return jsonify({"error": f"Fout bij transcriptie: {str(e)}"}), 502
@@ -881,6 +973,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
