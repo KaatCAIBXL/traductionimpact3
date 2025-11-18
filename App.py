@@ -105,10 +105,22 @@ SUPPORTED_WHISPER_EXTENSIONS = {
     ".amr",
 }
 
+}
+
+
+DEFAULT_GPT_TRANSLATION_MODEL = "gpt-4"
+GPT_TRANSLATION_MODEL_OVERRIDES = {
+    "kituba": "gpt-4.1",
+    "lingala": "gpt-4.1",
+    "tshiluba": "gpt-4.1",
+    "malagasy": "gpt-4.1",
+}
+
 
 def _normalize_language_key(code: Optional[str]) -> str:
     if not code:
         return ""
+
 
     normalized = unicodedata.normalize("NFKD", code)
     ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
@@ -141,6 +153,13 @@ def map_whisper_language_hint(code: Optional[str]) -> Optional[str]:
         return "en"
 
     return None
+
+
+def select_gpt_translation_model(target_language: Optional[str]) -> str:
+    key = _normalize_language_key(target_language)
+    if key in GPT_TRANSLATION_MODEL_OVERRIDES:
+        return GPT_TRANSLATION_MODEL_OVERRIDES[key]
+    return DEFAULT_GPT_TRANSLATION_MODEL
 
 # ---------------------------------------------------------------------home page
 
@@ -789,8 +808,9 @@ def vertaal_audio():
                 if openai_client is None:
                     vertaling = verbeterde_zin
                 else:
+                    gpt_model = select_gpt_translation_model(doel_taal)
                     response = openai_client.chat.completions.create(
-                        model="gpt-4",
+                        model=gpt_model,
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.3,
                     )
@@ -802,8 +822,9 @@ def vertaal_audio():
                 if openai_client is None:
                     vertaling = verbeterde_zin
                 else:
+                    gpt_model = select_gpt_translation_model(doel_taal)
                     response = openai_client.chat.completions.create(
-                        model="gpt-4",
+                        model=gpt_model,
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.3,
                     )
@@ -815,6 +836,7 @@ def vertaal_audio():
             vertaling = ""
 
         # 🔊 Spraakuitvoer (indien niet in tekst-only modus)
+
         threading.Thread(
             target=spreek_tekst_synchroon,
             args=(vertaling, doel_taal, not enkel_tekst),
@@ -847,6 +869,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
