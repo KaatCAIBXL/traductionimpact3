@@ -186,20 +186,30 @@ def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
         instructies_correctie = "(Geen instructies gevonden.)"
 
     prompt = f"""
-    Opdracht 1: bekijk alle vorige zinnen door de context te lezen. Ga dan na of er een woord is in de nieuwe zin die niet logisch is of niet in de context of zin past. Als dat het geval is vervang dan het woord door een woord dat wel in de context of zin past en dezelfde klanken heeft.  
-    Opdracht 2: Als je een bijbeltekst herkent uit een erkende bijbelvertaling, zorg dat die klopt.
-    Opdracht 3: Als je merkt dat er gebed is, kijk dan naar {instructies_correctie} om woorden te corrigeren. 
-    Context: "{context}"
-    Nieuwe zin: "{nieuwe_zin}"
-    Geef enkel de verbeterde zin terug, zonder uitleg.
-    """
+Opdracht 1: Lees de context (laatste drie zinnen). Corrigeer woorden in de nieuwe zin 
+die niet passen bij de betekenis of context, maar gebruik alleen vervangingen 
+met een gelijkaardige klank. Doe dit enkel als er voldoende context is.
+
+Opdracht 2: Als je een Bijbeltekst uit een erkende vertaling herkent, herstel die nauwkeurig.
+
+Opdracht 3: Als de zin een gebed bevat, pas de regels toe uit:
+{instructies_correctie}
+
+opdracht vier: als je "Ondertitels ingediend door de amara.org gemeenschap" tegenkomt in eender welke taal, vervang dit door "". Met andere woorden. Dit moet weg.
+
+Geef alleen de gecorrigeerde zin terug die natuurlijk klinkt, zonder uitleg.
+
+Context: "{context}"
+Nieuwe zin: "{nieuwe_zin}"
+"""
+
 
     if openai_client is None:
         return nieuwe_zin
 
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -869,6 +879,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
