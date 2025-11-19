@@ -30,6 +30,8 @@ let cachedWebmHeader = null;
 let recorderRequestTimer = null;
 let pendingSilenceFlush = false;
 let pendingSentence = null;
+let ttsAudioElement = null;
+let ttsAudioObjectUrl = null;
 
 const micStatusElement = document.getElementById("micStatus");
 const startButton = document.getElementById("start");
@@ -371,6 +373,40 @@ async function setupAudioDetection(stream) {
 // ======================================================
 //  TTS VIA BACKEND
 // ======================================================
+function ensureTtsAudioElement() {
+  if (ttsAudioElement && document.body.contains(ttsAudioElement)) {
+    return ttsAudioElement;
+  }
+
+  ttsAudioElement = document.createElement("audio");
+  ttsAudioElement.id = "ttsPlayer";
+  ttsAudioElement.preload = "auto";
+  ttsAudioElement.style.display = "none";
+  document.body.appendChild(ttsAudioElement);
+  return ttsAudioElement;
+}
+
+function playTtsBlob(blob, lang) {
+  const audioEl = ensureTtsAudioElement();
+
+  const nextUrl = URL.createObjectURL(blob);
+  if (ttsAudioObjectUrl) {
+    URL.revokeObjectURL(ttsAudioObjectUrl);
+  }
+  ttsAudioObjectUrl = nextUrl;
+
+  audioEl.src = nextUrl;
+  audioEl.dataset.lang = lang || "";
+  audioEl.currentTime = 0;
+
+  const playPromise = audioEl.play();
+  if (playPromise && typeof playPromise.catch === "function") {
+    playPromise.catch((error) => {
+      console.warn("[TTS] Kon audio niet afspelen:", error);
+    });
+  }
+}
+
 async function spreekVertaling(text, lang) {
   const trimmed = (text || "").trim();
   if (!trimmed) {
@@ -382,7 +418,13 @@ async function spreekVertaling(text, lang) {
   formData.append("lang", lang);
   formData.append("speak", "true");
 
-  const response = await fetch("/api/speak", { method: "POST", body: formData });
+  let response;
+  try {
+    response = await fetch("/api/speak", { method: "POST", body: formData });
+  } catch (networkError) {
+    console.warn("[TTS] Netwerkfout tijdens ophalen van spraak:", networkError);
+    return;
+  }
 
   if (!response.ok) {
     let errorMessage = "Kon geen audio genereren";
@@ -399,11 +441,12 @@ async function spreekVertaling(text, lang) {
     return;
   }
 
-  const blob = await response.blob();
-
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  audio.play();
+  try {
+    const blob = await response.blob();
+    playTtsBlob(blob, lang);
+  } catch (blobError) {
+    console.warn("[TTS] Kon audiobestand niet verwerken:", blobError);
+  }
 }
 
 // ======================================================
