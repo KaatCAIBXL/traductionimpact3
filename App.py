@@ -336,7 +336,11 @@ class AudioPreprocessingConfig:
 
 
 def _trim_silence(segment: AudioSegment, config: AudioPreprocessingConfig) -> AudioSegment:
-    """Return ``segment`` without leading/trailing silence based on config settings."""
+    """Return ``segment`` without leading/trailing silence based on config settings.
+    
+    Uses more conservative trimming at the end to preserve speech that might be
+    quieter or have trailing silence, improving transcription quality.
+    """
 
     nonsilent_ranges = detect_nonsilent(
         segment,
@@ -346,11 +350,30 @@ def _trim_silence(segment: AudioSegment, config: AudioPreprocessingConfig) -> Au
     if not nonsilent_ranges:
         return AudioSegment.silent(duration=0)
 
+    # Use standard padding at the start
     start = max(nonsilent_ranges[0][0] - config.silence_padding_ms, 0)
-    end = min(nonsilent_ranges[-1][1] + config.silence_padding_ms, len(segment))
+    
+    # Use more generous padding at the end to preserve trailing speech
+    # This helps with transcription quality at the end of segments
+    end_padding = config.silence_padding_ms * 2  # Double padding at the end
+    end = min(nonsilent_ranges[-1][1] + end_padding, len(segment))
+    
     if start >= end:
         return AudioSegment.silent(duration=0)
-    return segment[start:end]
+    
+    # Ensure minimum segment length to help Whisper with transcription
+    MIN_SEGMENT_LENGTH_MS = 500  # Minimum 500ms for better transcription
+    trimmed = segment[start:end]
+    if len(trimmed) < MIN_SEGMENT_LENGTH_MS and len(segment) >= MIN_SEGMENT_LENGTH_MS:
+        # If trimmed segment is too short but original has enough content,
+        # use a more conservative trim (keep more of the original)
+        center = (start + end) // 2
+        half_min = MIN_SEGMENT_LENGTH_MS // 2
+        start = max(0, center - half_min)
+        end = min(len(segment), center + half_min)
+        trimmed = segment[start:end]
+    
+    return trimmed
 
 
 def _preprocess_audio_file(path: str, config: AudioPreprocessingConfig) -> bool:
@@ -507,12 +530,39 @@ def _ensure_local_whisper_model():
     return _local_whisper_model
 
 
-def _transcribe_with_local_whisper(path: str, *, language_hint: Optional[str] = None):
+def _build_initial_prompt(context_list: list, max_length: int = 200) -> Optional[str]:
+    """Build an initial prompt from context sentences to help Whisper with transcription."""
+    if not context_list:
+        return None
+    
+    # Use the last few sentences as context (most relevant)
+    recent_context = context_list[-3:] if len(context_list) >= 3 else context_list
+    prompt = " ".join(recent_context).strip()
+    
+    if len(prompt) > max_length:
+        # Take the end of the prompt (most recent context)
+        prompt = prompt[-max_length:]
+    
+    return prompt if prompt else None
+
+
+def _transcribe_with_local_whisper(path: str, *, language_hint: Optional[str] = None, initial_prompt: Optional[str] = None):
     model = _ensure_local_whisper_model()
-    options = {"fp16": False}
+    options = {
+        "fp16": False,
+        "temperature": 0.0,  # More deterministic, better for consistent quality
+        "beam_size": 5,  # Better quality for shorter segments
+        "best_of": 5,  # Try multiple decodings and pick best
+        "compression_ratio_threshold": 2.4,  # Filter out repetitive text
+        "logprob_threshold": -1.0,  # Filter low-confidence transcriptions
+        "no_speech_threshold": 0.6,  # Better detection of speech vs silence
+    }
     if language_hint:
         options["language"] = language_hint
-
+    if initial_prompt:
+        # Use context from previous transcriptions to help Whisper
+        options["initial_prompt"] = initial_prompt[:200]  # Limit length
+    
     result = model.transcribe(path, **options)
     text = result.get("text", "") if isinstance(result, dict) else ""
     return SimpleNamespace(text=text)
@@ -549,6 +599,9 @@ def transcribe_audio():
 
 
 
+        # Build initial prompt from context to help Whisper
+        initial_prompt = _build_initial_prompt(context_zinnen)
+        
         transcript_response = None
         if openai_client is not None:
             try:
@@ -556,6 +609,8 @@ def transcribe_audio():
                     request_kwargs = {"model": "whisper-1", "file": af}
                     if language_hint:
                         request_kwargs["language"] = language_hint
+                    if initial_prompt:
+                        request_kwargs["prompt"] = initial_prompt[:200]
 
                     transcript_response = openai_client.audio.transcriptions.create(
                         **request_kwargs
@@ -568,7 +623,7 @@ def transcribe_audio():
 
         if transcript_response is None:
             transcript_response = _transcribe_with_local_whisper(
-                audio_path, language_hint=language_hint
+                audio_path, language_hint=language_hint, initial_prompt=initial_prompt
             )
 
         ruwe_tekst = transcript_response.text.strip()
@@ -988,6 +1043,11 @@ def vertaal_audio():
 
                     if include_language_hint and whisper_language_hint:
                         request_kwargs["language"] = whisper_language_hint
+                    
+                    # Use context from previous transcriptions to help Whisper
+                    initial_prompt = _build_initial_prompt(vorige_zinnen)
+                    if initial_prompt:
+                        request_kwargs["prompt"] = initial_prompt[:200]
 
                     return openai_client.audio.transcriptions.create(**request_kwargs)
 
@@ -1009,9 +1069,12 @@ def vertaal_audio():
                     return _call_remote(False)
 
             def _call_with_fallback():
+                # Build initial prompt from context
+                initial_prompt = _build_initial_prompt(vorige_zinnen)
+                
                 if openai_client is None:
                     return _transcribe_with_local_whisper(
-                        path, language_hint=whisper_language_hint
+                        path, language_hint=whisper_language_hint, initial_prompt=initial_prompt
                     )
 
                 try:
@@ -1030,7 +1093,7 @@ def vertaal_audio():
                     if whisper is None:
                         raise
                     return _transcribe_with_local_whisper(
-                        path, language_hint=whisper_language_hint
+                        path, language_hint=whisper_language_hint, initial_prompt=initial_prompt
                     )
 
             return _call_with_fallback()
