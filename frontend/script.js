@@ -108,9 +108,15 @@ function finalizePendingSentence(force = false) {
   sessionSegments.push(cleaned);
   renderLatestSegments();
 
+  // TTS alleen aanroepen bij finalisatie als we nog niet TTS hebben aangeroepen voor deze vertaling
+  // (om dubbele calls te voorkomen - TTS wordt al aangeroepen in queueSegmentForOutput)
+  // We lezen hier alleen de complete/finalized versie voor als die anders is
   if (!textOnlyCheckbox.checked && cleaned.translation && cleaned.translation.trim()) {
-    console.log("[TTS] Start voorlezen vertaling:", cleaned.translation.substring(0, 50) + "...");
-    spreekVertaling(cleaned.translation, targetLanguageSelect.value);
+    // Alleen voorlezen als dit een complete zin is (niet al voorgelezen in queueSegmentForOutput)
+    if (sentenceLooksComplete(cleaned.translation)) {
+      console.log("[TTS] Finalize: start voorlezen complete vertaling:", cleaned.translation.substring(0, 50) + "...");
+      spreekVertaling(cleaned.translation, targetLanguageSelect.value);
+    }
   } else {
     if (textOnlyCheckbox.checked) {
       console.log("[TTS] Overgeslagen: text-only modus actief");
@@ -141,6 +147,14 @@ function queueSegmentForOutput(segment) {
     pendingSentence.translation = textJoin(pendingSentence.translation, segment.translation);
   }
 
+  // TTS direct aanroepen wanneer er een nieuwe vertaling binnenkomt
+  // (ook als zin nog niet compleet is, zodat gebruiker niet hoeft te wachten)
+  if (!textOnlyCheckbox.checked && segment.translation && segment.translation.trim()) {
+    console.log("[TTS] Nieuwe vertaling ontvangen, start voorlezen:", segment.translation.substring(0, 50) + "...");
+    spreekVertaling(segment.translation, targetLanguageSelect.value);
+  }
+
+  // Finalize alleen als zin compleet is of geforceerd moet worden
   if (
     sentenceLooksComplete(pendingSentence.corrected) ||
     sentenceLooksComplete(pendingSentence.translation) ||
