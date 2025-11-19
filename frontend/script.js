@@ -372,19 +372,39 @@ async function setupAudioDetection(stream) {
 //  TTS VIA BACKEND
 // ======================================================
 async function spreekVertaling(text, lang) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) {
+    return;
+  }
+
   const formData = new FormData();
-  formData.append("text", text);
+  formData.append("text", trimmed);
   formData.append("lang", lang);
   formData.append("speak", "true");
 
   const response = await fetch("/api/speak", { method: "POST", body: formData });
+
+  if (!response.ok) {
+    let errorMessage = "Kon geen audio genereren";
+    try {
+      const payload = await response.json();
+      if (payload && typeof payload.error === "string" && payload.error.trim()) {
+        errorMessage = payload.error.trim();
+      }
+    } catch (_) {
+      // Het antwoord was geen JSON; val terug op standaardmelding.
+    }
+
+    console.warn(`[TTS] ${errorMessage}`);
+    return;
+  }
+
   const blob = await response.blob();
 
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   audio.play();
 }
-
 
 // ======================================================
 //  MEDIARECORDER — CROSS-BROWSER FALLBACK
@@ -1079,6 +1099,7 @@ function downloadSessionDocument() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
 
 
 
