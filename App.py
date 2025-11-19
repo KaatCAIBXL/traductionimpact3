@@ -17,6 +17,7 @@ from pydub.silence import detect_nonsilent
 from pydub.exceptions import CouldntDecodeError
 from pydub.effects import normalize, low_pass_filter
 import edge_tts
+from edge_tts import exceptions as edge_tts_exceptions
 
 try:
     import whisper
@@ -422,13 +423,39 @@ def _select_stem(taalcode: str) -> str:
     return STEMMAP.get(taalcode.lower(), DEFAULT_STEM)
 
 
+def _sanitize_tts_text(tekst: Optional[str]) -> str:
+    """Maak de tekst veilig voor TTS en verwijder betekenisloze whitespace."""
+
+    if tekst is None:
+        return ""
+    return unicodedata.normalize("NFC", tekst).strip()
+
+
 def _generate_tts_file(tekst: str, taalcode: str) -> str:
+    """Maak een tijdelijk mp3-bestand met uitgesproken ``tekst``."""
+
+    opgeschoonde_tekst = _sanitize_tts_text(tekst)
+    if not opgeschoonde_tekst:
+        raise ValueError("Geen tekst beschikbaar om uit te spreken.")
+
     stem = _select_stem(taalcode)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
         pad = tmp.name
-    asyncio.run(edge_tts.Communicate(tekst, stem).save(pad))
-    return pad
 
+    try:
+        asyncio.run(edge_tts.Communicate(opgeschoonde_tekst, stem).save(pad))
+    except edge_tts_exceptions.NoAudioReceived as exc:
+        if os.path.exists(pad):
+            os.remove(pad)
+        raise ValueError(
+            "TTS-service gaf geen audio terug. Controleer of de tekst niet leeg is."
+        ) from exc
+    except Exception:
+        if os.path.exists(pad):
+            os.remove(pad)
+        raise
+
+    return pad
 
 @app.route("/api/speak", methods=["POST"])
 def spreek():
@@ -436,7 +463,13 @@ def spreek():
     taalcode = request.form.get("lang", "nl")
     spreek_uit = request.form.get("speak", "true") == "true"
 
-    if not spreek_uit or not tekst:
+    tekst = _sanitize_tts_text(tekst)
+    taalcode = (taalcode or "nl").strip() or "nl"
+
+    if not spreek_uit:
+        return jsonify({"error": "Spraakuitvoer is uitgeschakeld"}), 400
+
+    if not tekst:
         return jsonify({"error": "Geen tekst om uit te spreken"}), 400
 
     try:
@@ -449,22 +482,28 @@ def spreek():
             except Exception as e:
                 print(f"[!] Kon bestand niet verwijderen: {e}")
             return response
-
         return send_file(mp3_bestand, mimetype="audio/mpeg")
 
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"Fout bij stemgeneratie: {str(e)}"}), 500
 
 
 def spreek_tekst_synchroon(tekst: str, taalcode: str, spreek_uit: bool = True) -> None:
+    tekst = _sanitize_tts_text(tekst)
+
     if not spreek_uit or not tekst:
         return
 
     mp3_bestand = None
     try:
         mp3_bestand = _generate_tts_file(tekst, taalcode)
+    except ValueError as e:
+        print(f"[i] TTS overgeslagen: {e}")
     except Exception as e:
         print(f"[!] Fout bij achtergrond-TTS: {e}")
+
     finally:
         if mp3_bestand and os.path.exists(mp3_bestand):
             try:
@@ -973,6 +1012,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
