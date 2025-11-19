@@ -61,12 +61,33 @@ ONGEWENSTE_TRANSCRIPTIES = [
     "Ondertitels ingediend door de amara.org gemeenschap",
     "Ondertitels ingediend door de amara.org gemeenschap",
     "Sous-titres soumis par la communauté amara.org.",
-    "TV GELDERLAND 2021",
     "Sous-titres soumis par la communauté amara.org",
+    "Sous titres soumis par la communaute amara.org",
+    "Sous-titres réalisés par la communauté d'Amara.org",
+    "Sous titres realises par la communaute d'Amara.org",
+    "TV GELDERLAND 2021",
     "TV GELDERLAND 2023",
     "bedankt om te luisteren",
     "bedankt om te kijken",
-    "bedankt om te kijken naar deze video"
+    "bedankt om te kijken naar deze video",
+]
+
+
+def _strip_diacritics(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value)
+    return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+
+
+def _normalize_blacklist_text(value: str) -> str:
+    stripped = _strip_diacritics(value.lower())
+    stripped = re.sub(r"[^a-z0-9]+", " ", stripped)
+    return stripped.strip()
+
+
+NORMALIZED_BLACKLIST = [
+    fragment_norm
+    for fragment_norm in (_normalize_blacklist_text(fragment) for fragment in ONGEWENSTE_TRANSCRIPTIES)
+    if fragment_norm
 ]
 
 
@@ -94,6 +115,12 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     opgeschoond = re.sub(r"\s{2,}", " ", opgeschoond).strip()
     if not _has_meaningful_transcript_content(opgeschoond):
         return ""
+
+    normalized_content = _normalize_blacklist_text(opgeschoond)
+    for fragment_norm in NORMALIZED_BLACKLIST:
+        if fragment_norm and fragment_norm in normalized_content:
+            return ""
+
     return opgeschoond
 
 ENKEL_TEKST_MODUS = False
