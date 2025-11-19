@@ -79,6 +79,38 @@ ONGEWENSTE_TRANSCRIPTIES = [
     "Ondertiteling",
     "ondertitels",
     "Ondertitels",
+    "Sous-titrage ST",
+    "sous-titrage ST",
+    "Sous titrage ST",
+    "Ondertiteling ST",
+    "ondertiteling ST",
+    "501",
+    "Merci. Au revoir.",
+    "Merci. Au revoir",
+    "Merci.",
+    "Merci",
+    "Ciao !",
+    "Ciao!",
+    "Ciao",
+    "Merci d'avoir regardé cette vidéo !",
+    "Merci d'avoir regarde cette video !",
+    "Merci d'avoir regardé cette vidéo",
+    "Merci d'avoir regarde cette video",
+    "Sous-titrage Société Radio-canada",
+    "Sous titrage Societe Radio-canada",
+    "Sous-titrage Société Radio Canada",
+    "Ondertiteling Radio-Canada",
+    "ondertiteling Radio-Canada",
+    "Ondertiteling Radio Canada",
+    "Bedankt. Tot ziens.",
+    "Bedankt. Tot ziens",
+    "Bedankt.",
+    "Bedankt",
+    "Dag!",
+    "Dag",
+    "Bedankt voor het kijken naar deze video !",
+    "Bedankt voor het kijken naar deze video",
+    "Bedankt voor het kijken",
     "TV GELDERLAND 2021",
     "TV GELDERLAND 2023",
     "bedankt om te luisteren",
@@ -112,7 +144,37 @@ BLACKLIST_TOKEN_COMBOS = [
     ("subtitulos", "amara"),
     ("subtitulos", "comunidad"),
     ("ondertitels", "amara"),
+    ("merci", "regarde"),
+    ("merci", "video"),
+    ("bedankt", "kijken"),
+    ("bedankt", "video"),
+    ("sous titrage", "radio"),
+    ("sous titrage", "canada"),
+    ("ondertiteling", "radio"),
+    ("ondertiteling", "canada"),
 ]
+
+
+def _contains_emoji(tekst: str) -> bool:
+    """Check if text contains any emoji characters."""
+    # Emoji ranges in Unicode
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # Emoticons
+        "\U0001F300-\U0001F5FF"  # Symbols & Pictographs
+        "\U0001F680-\U0001F6FF"  # Transport & Map
+        "\U0001F1E0-\U0001F1FF"  # Flags
+        "\U00002702-\U000027B0"  # Dingbats
+        "\U000024C2-\U0001F251"  # Enclosed characters
+        "\U0001F900-\U0001F9FF"  # Supplemental Symbols
+        "\U0001FA00-\U0001FA6F"  # Chess Symbols
+        "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+        "\U00002600-\U000026FF"  # Miscellaneous Symbols
+        "\U00002700-\U000027BF"  # Dingbats
+        "]+",
+        flags=re.UNICODE
+    )
+    return bool(emoji_pattern.search(tekst))
 
 
 def _has_meaningful_transcript_content(tekst: str) -> bool:
@@ -128,6 +190,10 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     if not tekst:
         return tekst
 
+    # EARLY REJECTION: Check for emojis - reject anything with emojis
+    if _contains_emoji(tekst):
+        return ""
+
     # EARLY REJECTION: Check for subtitle variants BEFORE any processing
     # This ensures they never appear in the transcript at all
     tekst_lower = tekst.lower()
@@ -136,6 +202,21 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
         return ""
     # Dutch variants
     if "ondertiteld" in tekst_lower or "ondertiteling" in tekst_lower or ("ondertitels" in tekst_lower and "amara" in tekst_lower):
+        return ""
+    
+    # Check for common closing phrases
+    tekst_stripped = tekst_lower.strip()
+    # French closing phrases
+    if tekst_stripped in ["merci.", "merci", "merci. au revoir.", "merci. au revoir", "ciao !", "ciao!", "ciao"]:
+        return ""
+    # Dutch closing phrases
+    if tekst_stripped in ["bedankt.", "bedankt", "bedankt. tot ziens.", "bedankt. tot ziens", "dag!", "dag"]:
+        return ""
+    # Check for "501" (common subtitle error code)
+    if tekst_stripped == "501":
+        return ""
+    # Check for "Sous-titrage ST" or "Ondertiteling ST"
+    if "sous-titrage st" in tekst_lower or "ondertiteling st" in tekst_lower:
         return ""
 
     opgeschoond = tekst
