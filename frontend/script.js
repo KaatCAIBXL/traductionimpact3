@@ -46,9 +46,11 @@ const translationContainer = document.getElementById("trans");
 let micStatusState = "idle";
 
 const CHUNK_INTERVAL_MS = 1500;
-const SILENCE_FLUSH_MS = 1200;
+const SILENCE_FLUSH_MS = 1400;
 const MAX_BUFFER_MS = 6000;
 const MIN_VALID_AUDIO_BYTES = 1024;
+const MIN_UPLOAD_DURATION_MS = 1000;
+const MIN_UPLOAD_BYTES = 4096;
 // Zorg dat elke blob die we naar de backend sturen opnieuw een container-header bevat
 // (Safari/Chrome leveren anders "headerloze" segmenten waardoor Whisper niets kan).
 const FORCE_RECORDER_RESTART_AFTER_UPLOAD = true;
@@ -360,10 +362,10 @@ async function setupAudioDetection(stream) {
       }
     }
 
-    const silenceDuration = Date.now() - lastSpeechTime;
-    if (!isSpeaking && silenceDuration >= SILENCE_FLUSH_MS) {
-      triggerSilenceFlush();
-    }
+  const silenceDuration = Date.now() - lastSpeechTime;
+  if (!isSpeaking && silenceDuration >= SILENCE_FLUSH_MS) {
+    triggerSilenceFlush();
+  }
 
     previousSpeakingState = isSpeaking;
   }, 150);
@@ -930,7 +932,10 @@ async function handleDataAvailable(event) {
     0
   );
 
-  if (totalBytes < MIN_VALID_AUDIO_BYTES) {
+  if (totalBytes < MIN_UPLOAD_BYTES || bufferedDurationMs < MIN_UPLOAD_DURATION_MS) {
+    if (forceFlush) {
+      pendingSilenceFlush = true;
+    }
     // Safari levert soms losse containerheaders zonder audiogegevens aan. Die
     // veroorzaken "File ended prematurely"-fouten bij ffmpeg. Wacht tot er
     // effectieve audio binnenloopt zodat we de header samen met echte data
