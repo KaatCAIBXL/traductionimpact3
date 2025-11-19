@@ -812,6 +812,10 @@ def vertaal_audio():
         transcript_error = None
 
         def _transcribe_with_whisper(path):
+            def _is_audio_too_short_error(error: Exception) -> bool:
+                message = str(error).lower()
+                return "audio file is too short" in message or "audio_too_short" in message
+
             def _call_remote(include_language_hint: bool):
                 if openai_client is None:
                     raise RuntimeError("Geen OpenAI-client beschikbaar")
@@ -853,6 +857,12 @@ def vertaal_audio():
                 try:
                     return _call_with_language_hint()
                 except Exception as exc:
+                    if _is_audio_too_short_error(exc):
+                        print(
+                            "[i] Whisper API overslaan: audio korter dan 0.1s; behandel als stilte."
+                        )
+                        return SimpleNamespace(text="")
+
                     print(
                         "[!] Whisper API faalde, val terug op lokaal model indien beschikbaar:",
                         exc,
