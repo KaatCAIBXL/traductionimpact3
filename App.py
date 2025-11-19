@@ -65,6 +65,14 @@ ONGEWENSTE_TRANSCRIPTIES = [
     "Sous titres soumis par la communaute amara.org",
     "Sous-titres réalisés par la communauté d'Amara.org",
     "Sous titres realises par la communaute d'Amara.org",
+    "Sous-titres réalisés para la communauté d'Amara.org",
+    "Sous titres realises para la communaute d'Amara.org",
+    "Sous-titres réalisés para la communauté d'Amara.org",
+    "Sous titres realises para la communaute d'Amara.org",
+    "Sous-titres",
+    "sous-titres",
+    "Sous titres",
+    "sous titres",
     "TV GELDERLAND 2021",
     "TV GELDERLAND 2023",
     "bedankt om te luisteren",
@@ -114,6 +122,12 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     if not tekst:
         return tekst
 
+    # EARLY REJECTION: Check for "sous-titres" variants BEFORE any processing
+    # This ensures they never appear in the transcript at all
+    tekst_lower = tekst.lower()
+    if ("sous" in tekst_lower and "titres" in tekst_lower) or "sous-titres" in tekst_lower or "sous titres" in tekst_lower:
+        return ""
+
     opgeschoond = tekst
     for fragment in ONGEWENSTE_TRANSCRIPTIES:
         patroon = re.compile(
@@ -134,6 +148,10 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     for needle_a, needle_b in BLACKLIST_TOKEN_COMBOS:
         if needle_a in normalized_content and needle_b in normalized_content:
             return ""
+
+    # Aggressive check: if "sous" + "titres" appear together in any form, reject
+    if "sous" in normalized_content and "titres" in normalized_content:
+        return ""
 
     return opgeschoond
 
