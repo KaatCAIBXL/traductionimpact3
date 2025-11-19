@@ -38,6 +38,7 @@ const startButton = document.getElementById("start");
 const pauseButton = document.getElementById("pause");
 const stopButton = document.getElementById("stop");
 const textOnlyCheckbox = document.getElementById("textOnly");
+const microphoneSelect = document.getElementById("microphoneSelect");
 const sourceLanguageSelect = document.getElementById("sourceLanguage");
 const targetLanguageSelect = document.getElementById("languageSelect");
 const recognizedContainer = document.getElementById("orig");
@@ -210,6 +211,52 @@ function setMicStatus(state, detail = "") {
 }
 
 setMicStatus("idle");
+
+// ======================================================
+//  MICROFOON DEVICE SELECTIE
+// ======================================================
+async function loadMicrophoneDevices() {
+  if (!microphoneSelect) {
+    return;
+  }
+
+  try {
+    // Vraag eerst toestemming voor microfoon om device labels te krijgen
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(track => track.stop()); // Stop direct, we hebben alleen toestemming nodig
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter(device => device.kind === "audioinput");
+
+    // Leeg de dropdown behalve de standaard optie
+    microphoneSelect.innerHTML = '<option value="">Standaard microfoon</option>';
+
+    audioInputs.forEach((device, index) => {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      // Gebruik label of maak een beschrijvende naam
+      const label = device.label || `Microfoon ${index + 1}`;
+      option.textContent = label;
+      microphoneSelect.appendChild(option);
+    });
+
+    console.log(`[Microfoon] ${audioInputs.length} microfoon(s) gevonden`);
+  } catch (error) {
+    console.warn("[Microfoon] Kon microfoons niet ophalen:", error);
+    // Voeg een optie toe om later opnieuw te proberen
+    if (microphoneSelect.options.length === 1) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "Klik 'start' om microfoons te laden";
+      microphoneSelect.appendChild(option);
+    }
+  }
+}
+
+// Laad microfoons bij het laden van de pagina
+if (microphoneSelect) {
+  loadMicrophoneDevices();
+}
 
 function renderLatestSegments() {
   const recent = sessionSegments.slice(-2);
@@ -1073,10 +1120,23 @@ if (startButton) {
 
     try {
       setMicStatus("calibrating");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Gebruik de geselecteerde microfoon deviceId
+      const constraints = { audio: true };
+      const selectedDeviceId = microphoneSelect?.value;
+      if (selectedDeviceId) {
+        constraints.audio = { deviceId: { exact: selectedDeviceId } };
+        console.log(`[Microfoon] Gebruik geselecteerde microfoon: ${microphoneSelect.options[microphoneSelect.selectedIndex]?.textContent}`);
+      }
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       activeStream = stream;
 
       console.log("🎙️ Microfoon toestemming OK");
+      
+      // Herlaad microfoons om labels te krijgen (na toestemming zijn ze beschikbaar)
+      await loadMicrophoneDevices();
+      
       await setupAudioDetection(stream);
 
       const options = getRecorderOptions();
