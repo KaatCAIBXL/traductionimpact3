@@ -90,6 +90,16 @@ NORMALIZED_BLACKLIST = [
     if fragment_norm
 ]
 
+BLACKLIST_TOKEN_COMBOS = [
+    ("sous titres", "amara"),
+    ("sous titres", "communaut"),
+    ("subtitles", "amara"),
+    ("subtitles", "community"),
+    ("subtitulos", "amara"),
+    ("subtitulos", "comunidad"),
+    ("ondertitels", "amara"),
+]
+
 
 def _has_meaningful_transcript_content(tekst: str) -> bool:
     """Return ``True`` if ``tekst`` contains non-punctuation characters."""
@@ -119,6 +129,10 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     normalized_content = _normalize_blacklist_text(opgeschoond)
     for fragment_norm in NORMALIZED_BLACKLIST:
         if fragment_norm and fragment_norm in normalized_content:
+            return ""
+
+    for needle_a, needle_b in BLACKLIST_TOKEN_COMBOS:
+        if needle_a in normalized_content and needle_b in normalized_content:
             return ""
 
     return opgeschoond
