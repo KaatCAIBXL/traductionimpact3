@@ -73,6 +73,12 @@ ONGEWENSTE_TRANSCRIPTIES = [
     "sous-titres",
     "Sous titres",
     "sous titres",
+    "ondertiteld",
+    "Ondertiteld",
+    "ondertiteling",
+    "Ondertiteling",
+    "ondertitels",
+    "Ondertitels",
     "TV GELDERLAND 2021",
     "TV GELDERLAND 2023",
     "bedankt om te luisteren",
@@ -122,10 +128,14 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     if not tekst:
         return tekst
 
-    # EARLY REJECTION: Check for "sous-titres" variants BEFORE any processing
+    # EARLY REJECTION: Check for subtitle variants BEFORE any processing
     # This ensures they never appear in the transcript at all
     tekst_lower = tekst.lower()
+    # French variants
     if ("sous" in tekst_lower and "titres" in tekst_lower) or "sous-titres" in tekst_lower or "sous titres" in tekst_lower:
+        return ""
+    # Dutch variants
+    if "ondertiteld" in tekst_lower or "ondertiteling" in tekst_lower or ("ondertitels" in tekst_lower and "amara" in tekst_lower):
         return ""
 
     opgeschoond = tekst

@@ -107,8 +107,15 @@ function finalizePendingSentence(force = false) {
   sessionSegments.push(cleaned);
   renderLatestSegments();
 
-  if (!textOnlyCheckbox.checked && cleaned.translation) {
+  if (!textOnlyCheckbox.checked && cleaned.translation && cleaned.translation.trim()) {
+    console.log("[TTS] Start voorlezen vertaling:", cleaned.translation.substring(0, 50) + "...");
     spreekVertaling(cleaned.translation, targetLanguageSelect.value);
+  } else {
+    if (textOnlyCheckbox.checked) {
+      console.log("[TTS] Overgeslagen: text-only modus actief");
+    } else if (!cleaned.translation || !cleaned.translation.trim()) {
+      console.log("[TTS] Overgeslagen: geen vertaling beschikbaar");
+    }
   }
 }
 
@@ -401,19 +408,35 @@ function playTtsBlob(blob, lang) {
   audioEl.dataset.lang = lang || "";
   audioEl.currentTime = 0;
 
+  // Add event listeners for debugging
+  audioEl.onplay = () => console.log("[TTS] Audio start afspelen");
+  audioEl.onended = () => console.log("[TTS] Audio afgelopen");
+  audioEl.onerror = (e) => console.error("[TTS] Audio fout:", e);
+
   const playPromise = audioEl.play();
   if (playPromise && typeof playPromise.catch === "function") {
-    playPromise.catch((error) => {
-      console.warn("[TTS] Kon audio niet afspelen:", error);
-    });
+    playPromise
+      .then(() => {
+        console.log("[TTS] Audio afspelen gestart");
+      })
+      .catch((error) => {
+        console.error("[TTS] Kon audio niet afspelen:", error);
+        // Browser autoplay policy might block this - user interaction required
+        if (error.name === "NotAllowedError") {
+          console.warn("[TTS] Browser blokkeert autoplay - gebruiker moet eerst interactie hebben");
+        }
+      });
   }
 }
 
 async function spreekVertaling(text, lang) {
   const trimmed = (text || "").trim();
   if (!trimmed) {
+    console.log("[TTS] Geen tekst om voor te lezen");
     return;
   }
+
+  console.log(`[TTS] Vraag audio aan voor: "${trimmed.substring(0, 50)}${trimmed.length > 50 ? '...' : ''}" (taal: ${lang})`);
 
   const formData = new FormData();
   formData.append("text", trimmed);
@@ -424,7 +447,7 @@ async function spreekVertaling(text, lang) {
   try {
     response = await fetch("/api/speak", { method: "POST", body: formData });
   } catch (networkError) {
-    console.warn("[TTS] Netwerkfout tijdens ophalen van spraak:", networkError);
+    console.error("[TTS] Netwerkfout tijdens ophalen van spraak:", networkError);
     return;
   }
 
@@ -439,15 +462,20 @@ async function spreekVertaling(text, lang) {
       // Het antwoord was geen JSON; val terug op standaardmelding.
     }
 
-    console.warn(`[TTS] ${errorMessage}`);
+    console.error(`[TTS] Serverfout (${response.status}): ${errorMessage}`);
     return;
   }
 
   try {
     const blob = await response.blob();
+    if (!blob || blob.size === 0) {
+      console.error("[TTS] Lege audio blob ontvangen");
+      return;
+    }
+    console.log(`[TTS] Audio ontvangen (${blob.size} bytes), start afspelen...`);
     playTtsBlob(blob, lang);
   } catch (blobError) {
-    console.warn("[TTS] Kon audiobestand niet verwerken:", blobError);
+    console.error("[TTS] Kon audiobestand niet verwerken:", blobError);
   }
 }
 
