@@ -104,6 +104,16 @@ ONGEWENSTE_TRANSCRIPTIES = [
     "Ondertiteling Radio Canada",
     "Bedankt. Tot ziens.",
     "Bedankt. Tot ziens",
+    "Tot ziens.",
+    "Tot ziens",
+    "Tot Ziens.",
+    "Tot Ziens",
+    "A bientôt",
+    "A bientot",
+    "À bientôt",
+    "À bientot",
+    "a bientôt",
+    "a bientot",
     "Bedankt.",
     "Bedankt",
     "Dag!",
@@ -207,10 +217,10 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     # Check for common closing phrases
     tekst_stripped = tekst_lower.strip()
     # French closing phrases
-    if tekst_stripped in ["merci.", "merci", "merci. au revoir.", "merci. au revoir", "ciao !", "ciao!", "ciao"]:
+    if tekst_stripped in ["merci.", "merci", "merci. au revoir.", "merci. au revoir", "ciao !", "ciao!", "ciao", "a bientôt", "a bientot", "à bientôt", "à bientot"]:
         return ""
     # Dutch closing phrases
-    if tekst_stripped in ["bedankt.", "bedankt", "bedankt. tot ziens.", "bedankt. tot ziens", "dag!", "dag"]:
+    if tekst_stripped in ["bedankt.", "bedankt", "bedankt. tot ziens.", "bedankt. tot ziens", "tot ziens.", "tot ziens", "dag!", "dag"]:
         return ""
     # Check for "501" (common subtitle error code)
     if tekst_stripped == "501":
