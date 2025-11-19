@@ -284,6 +284,7 @@ def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
         return nieuwe_zin
 
     context = " ".join(vorige_zinnen[-3:])
+
     try:
         with open("instructies_correctie.txt", "r", encoding="utf-8") as f:
             instructies_correctie = f.read()
@@ -291,27 +292,32 @@ def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
         instructies_correctie = "(Geen instructies gevonden.)"
 
     prompt = f"""
-Opdracht 1: Lees de context (laatste drie zinnen). Corrigeer woorden in de nieuwe zin 
-die niet passen bij de betekenis of context, maar gebruik alleen vervangingen 
+Opdracht 1: Lees de context (de laatste drie zinnen). Corrigeer woorden in de nieuwe zin
+die niet passen bij de betekenis of context, maar gebruik alleen vervangingen
 met een gelijkaardige klank. Doe dit enkel als er voldoende context is.
+
+BELANGRIJK: Als de originele zin een correcte zin is, mag je die niet veranderen.
+ENKEL als je merkt dat iets onlogisch is, incorrect is, of als je een Bijbelvers tegenkomt, mag je aanpassingen doen.
 
 Opdracht 2: Als je een Bijbeltekst uit een erkende vertaling herkent, herstel die nauwkeurig.
 
 Opdracht 3: Als de zin een gebed bevat, pas de regels toe uit:
 {instructies_correctie}
 
-opdracht vier: als je een zin "Ondertitels ..." of "...bedankt om te ..." tegenkomt in eender welke taal, vervang dit door "". Met andere woorden. Dit moet weg.
-odracht vijf: als je een '.' tegenkomt, laat het zo, vind nooit extra zinnen uit!
+Opdracht 4: Als je een zin tegenkomt met "Ondertitels ..." of "...bedankt om te ..." in eender welke taal,
+vervang dit door een lege string "". Met andere woorden: dit moet weg.
+
+Opdracht 5: Als je een '.' tegenkomt, laat die staan. Voeg nooit extra zinnen toe!
 
 Geef alleen de gecorrigeerde zin terug die natuurlijk klinkt, zonder uitleg.
 
-Geef NOOIT opmerkingen. Enkel vertaling of niets. 
+Geef NOOIT opmerkingen. Enkel vertaling of niets.
 Context: "{context}"
 Nieuwe zin: "{nieuwe_zin}"
 """
 
-
     if openai_client is None:
+        print("[!] Geen OpenAI-client beschikbaar.")
         return nieuwe_zin
 
     try:
@@ -324,7 +330,6 @@ Nieuwe zin: "{nieuwe_zin}"
     except Exception as e:
         print(f"[!] Fout bij contextuele correctie: {e}")
         return nieuwe_zin
-
 
 #-------------------------------------------------------------------------correcting with whisper
 def _ensure_local_whisper_model():
@@ -1042,6 +1047,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
