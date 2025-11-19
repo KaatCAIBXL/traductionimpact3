@@ -459,34 +459,72 @@ function ensureTtsAudioElement() {
 function playTtsBlob(blob, lang) {
   const audioEl = ensureTtsAudioElement();
 
-  const nextUrl = URL.createObjectURL(blob);
+  // Stop huidige audio als die speelt
+  if (!audioEl.paused) {
+    audioEl.pause();
+    audioEl.currentTime = 0;
+  }
+
+  // Cleanup oude URL
   if (ttsAudioObjectUrl) {
     URL.revokeObjectURL(ttsAudioObjectUrl);
+    ttsAudioObjectUrl = null;
   }
+
+  const nextUrl = URL.createObjectURL(blob);
   ttsAudioObjectUrl = nextUrl;
 
+  // Reset audio element
+  audioEl.src = "";
+  audioEl.load(); // Force reload
+
+  // Set nieuwe source
   audioEl.src = nextUrl;
   audioEl.dataset.lang = lang || "";
   audioEl.currentTime = 0;
+  audioEl.volume = 1.0; // Zorg dat volume op max staat
 
-  // Add event listeners for debugging
-  audioEl.onplay = () => console.log("[TTS] Audio start afspelen");
-  audioEl.onended = () => console.log("[TTS] Audio afgelopen");
-  audioEl.onerror = (e) => console.error("[TTS] Audio fout:", e);
+  // Add event listeners for debugging (alleen eenmalig)
+  if (!audioEl.hasAttribute("data-listeners-added")) {
+    audioEl.setAttribute("data-listeners-added", "true");
+    audioEl.onplay = () => console.log("[TTS] ✅ Audio start afspelen");
+    audioEl.onended = () => console.log("[TTS] ✅ Audio afgelopen");
+    audioEl.onerror = (e) => {
+      console.error("[TTS] ❌ Audio fout:", e, audioEl.error);
+    };
+    audioEl.onloadstart = () => console.log("[TTS] 📥 Audio begint te laden");
+    audioEl.oncanplay = () => console.log("[TTS] ✅ Audio kan afgespeeld worden");
+    audioEl.oncanplaythrough = () => console.log("[TTS] ✅ Audio volledig geladen");
+  }
 
+  // Probeer af te spelen
   const playPromise = audioEl.play();
   if (playPromise && typeof playPromise.catch === "function") {
     playPromise
       .then(() => {
-        console.log("[TTS] Audio afspelen gestart");
+        console.log("[TTS] ✅ Audio afspelen succesvol gestart");
       })
       .catch((error) => {
-        console.error("[TTS] Kon audio niet afspelen:", error);
+        console.error("[TTS] ❌ Kon audio niet afspelen:", error.name, error.message);
         // Browser autoplay policy might block this - user interaction required
         if (error.name === "NotAllowedError") {
-          console.warn("[TTS] Browser blokkeert autoplay - gebruiker moet eerst interactie hebben");
+          console.warn("[TTS] ⚠️ Browser blokkeert autoplay - klik ergens op de pagina en probeer opnieuw");
+          // Probeer opnieuw na korte delay (soms helpt dit)
+          setTimeout(() => {
+            audioEl.play().catch(e => console.error("[TTS] ❌ Retry ook mislukt:", e));
+          }, 100);
+        } else {
+          console.error("[TTS] ❌ Onbekende audio fout:", error);
         }
       });
+  } else {
+    // Fallback voor oudere browsers
+    console.log("[TTS] ⚠️ play() geeft geen promise terug, probeer direct af te spelen");
+    try {
+      audioEl.play();
+    } catch (e) {
+      console.error("[TTS] ❌ Direct play() mislukt:", e);
+    }
   }
 }
 
@@ -1090,7 +1128,15 @@ async function handleDataAvailable(event) {
         alert("❌ Vertaalfout: " + foutmelding);
       }
     } else {
-const segment = {
+      // Debug: log wat we ontvangen
+      console.log("[Translate] Response ontvangen:", {
+        recognized: data.recognized?.substring(0, 50),
+        corrected: data.corrected?.substring(0, 50),
+        translation: data.translation?.substring(0, 50),
+        hasTranslation: !!(data.translation && data.translation.trim())
+      });
+
+      const segment = {
         recognized: data.recognized || "",
         corrected: data.corrected || data.recognized || "",
         translation: data.translation || "",
