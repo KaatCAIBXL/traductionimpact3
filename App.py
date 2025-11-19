@@ -55,6 +55,7 @@ if DEEPL_API_KEY:
 vorige_zinnen = []
 context_zinnen = []
 
+# Zinnen die we liever niet in de uiteindelijke transcriptie tonen.
 ONGEWENSTE_TRANSCRIPTIES = [
     "ondertitels ingediend door de amara.org gemeenschap",
     "Ondertitels ingediend door de amara.org gemeenschap",
@@ -69,6 +70,15 @@ ONGEWENSTE_TRANSCRIPTIES = [
 ]
 
 
+def _has_meaningful_transcript_content(tekst: str) -> bool:
+    """Return ``True`` if ``tekst`` contains non-punctuation characters."""
+
+    for char in tekst:
+        if unicodedata.category(char)[0] in {"L", "N"}:
+            return True
+    return False
+
+
 def verwijder_ongewenste_transcripties(tekst: str) -> str:
     if not tekst:
         return tekst
@@ -81,7 +91,10 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
         )
         opgeschoond = patroon.sub(" ", opgeschoond)
 
-    return re.sub(r"\s{2,}", " ", opgeschoond).strip()
+    opgeschoond = re.sub(r"\s{2,}", " ", opgeschoond).strip()
+    if not _has_meaningful_transcript_content(opgeschoond):
+        return ""
+    return opgeschoond
 
 ENKEL_TEKST_MODUS = False
 
@@ -396,13 +409,20 @@ def transcribe_audio():
         ruwe_tekst = transcript_response.text.strip()
         tekst = verwijder_ongewenste_transcripties(ruwe_tekst)
 
-        if tekst:
-            corrected = corrigeer_zin_met_context(tekst, context_zinnen)
-            corrected = verwijder_ongewenste_transcripties(corrected)
-            context_zinnen.append(corrected)
-        else:
-            corrected = ""
-        
+        if not tekst:
+            return jsonify(
+                {
+                    "recognized": "",
+                    "corrected": "",
+                    "silenceDetected": True,
+                    "preprocessing": asdict(preprocess_config),
+                }
+            )
+
+        corrected = corrigeer_zin_met_context(tekst, context_zinnen)
+        corrected = verwijder_ongewenste_transcripties(corrected)
+        context_zinnen.append(corrected)
+
         return jsonify(
             {
                 "recognized": tekst,
@@ -903,8 +923,18 @@ def vertaal_audio():
                 }
             )
 
-        tekst = verwijder_ongewenste_transcripties(ruwe_tekst)
-       
+            tekst = verwijder_ongewenste_transcripties(ruwe_tekst)
+
+        if not tekst:
+            return jsonify(
+                {
+                    "recognized": "",
+                    "corrected": "",
+                    "translation": "",
+                    "silenceDetected": True,
+                }
+            )
+
 
         # ✍️ Contextuele correctie
         if tekst:
@@ -1012,6 +1042,7 @@ def resultaat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
