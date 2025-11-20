@@ -1222,17 +1222,39 @@ if (startButton) {
 // ======================================================
 if (pauseButton) {
   pauseButton.onclick = () => {
-    if (!mediaRecorder) return;
+    if (!mediaRecorder) {
+      console.warn("[Pause] Geen mediaRecorder beschikbaar");
+      return;
+    }
 
-    if (!isPaused && mediaRecorder.state === "recording") {
-      triggerSilenceFlush();
-      mediaRecorder.pause();
-      isPaused = true;
-      pauseButton.innerText = "▶️ continue ▶️";
-    } else if (mediaRecorder.state === "paused") {
-      mediaRecorder.resume();
-      isPaused = false;
-      pauseButton.innerText = "⏸️ pause ⏸️";
+    const state = mediaRecorder.state;
+    console.log(`[Pause] Huidige state: ${state}, isPaused: ${isPaused}`);
+
+    if (state === "recording" && !isPaused) {
+      // Pauzeren
+      try {
+        triggerSilenceFlush();
+        mediaRecorder.pause();
+        isPaused = true;
+        pauseButton.innerText = "▶️ continue ▶️";
+        setMicStatus("paused", "Opname gepauzeerd");
+        console.log("[Pause] Opname gepauzeerd");
+      } catch (error) {
+        console.error("[Pause] Fout bij pauzeren:", error);
+      }
+    } else if (state === "paused" && isPaused) {
+      // Hervatten
+      try {
+        mediaRecorder.resume();
+        isPaused = false;
+        pauseButton.innerText = "⏸️ pause ⏸️";
+        setMicStatus("listening", "Aan het luisteren...");
+        console.log("[Pause] Opname hervat");
+      } catch (error) {
+        console.error("[Pause] Fout bij hervatten:", error);
+      }
+    } else {
+      console.warn(`[Pause] Onverwachte state: ${state}, isPaused: ${isPaused}`);
     }
   };
 }

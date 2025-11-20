@@ -497,22 +497,26 @@ def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
         instructies_correctie = "(Geen instructies gevonden.)"
 
     prompt = f"""
-Opdracht 1: Lees de context (de laatste drie zinnen). Corrigeer woorden in de nieuwe zin
-die niet passen bij de betekenis of context, maar gebruik alleen vervangingen
-met een gelijkaardige klank. Doe dit enkel als er voldoende context is.
 
 BELANGRIJK: Als de originele zin een correcte zin is, mag je die niet veranderen.
 ENKEL als je merkt dat iets onlogisch is, incorrect is, of als je een Bijbelvers tegenkomt, mag je aanpassingen doen.
 
-Opdracht 2: Als je een Bijbeltekst uit een erkende vertaling herkent, herstel die nauwkeurig.
+Opdracht 1: Als je een Bijbeltekst uit een erkende vertaling herkent, herstel die nauwkeurig.
 
-Opdracht 3: Als de zin een gebed bevat, pas de regels toe uit:
+Opdracht 2: Als de zin een gebed bevat, pas de regels toe uit:
 {instructies_correctie}
 
-Opdracht 4: Als je een zin tegenkomt met "Ondertitels ..." of "...bedankt om te ..." in eender welke taal,
+Opdracht 3: Als je een zin tegenkomt met "Ondertitels ..." of "...bedankt om te ..." in eender welke taal,
 vervang dit door een lege string "". Met andere woorden: dit moet weg.
 
-Opdracht 5: Als je een '.' tegenkomt, laat die staan. Voeg nooit extra zinnen toe!
+Opdracht 4: Als je een '.' tegenkomt, laat die staan. Voeg nooit extra zinnen toe!
+
+Opdracht 5: CRITIEK - Onlogische zinnen en speech-to-text fouten:
+- Als de zin HEEL onlogisch is en duidelijk niet past in de context, dan heeft speech-to-text het waarschijnlijk verkeerd verstaan.
+- Als je het woord "worden" tegenkomt dat niet logisch is in de context, probeer dit te vervangen door woorden met dezelfde klanken die WEL in de context passen.
+- Bijvoorbeeld: "worden" kan verkeerd verstaan zijn van "woorden", "worden" (als werkwoord), "wordt", "werd", of andere klank-gerelateerde woorden.
+- Gebruik de context om te raden wat er bedoeld werd.
+- Als je echt niet kunt raden wat er bedoeld werd en de zin is compleet onlogisch, geef dan een lege string "" terug (wis de zin volledig).
 
 Geef alleen de gecorrigeerde zin terug die natuurlijk klinkt, zonder uitleg.
 
