@@ -41,9 +41,7 @@ const textOnlyCheckbox = document.getElementById("textOnly");
 const microphoneSelect = document.getElementById("microphoneSelect");
 const sourceLanguageSelect = document.getElementById("sourceLanguage");
 const targetLanguageSelect = document.getElementById("languageSelect");
-const recognizedContainer = document.getElementById("orig");
-const correctedContainer = document.getElementById("transcript");
-const translationContainer = document.getElementById("trans");
+const transcriptContainer = document.getElementById("transcriptContainer");
 let micStatusState = "idle";
 
 const CHUNK_INTERVAL_MS = 1500;
@@ -273,25 +271,69 @@ if (microphoneSelect) {
 }
 
 function renderLatestSegments() {
-  const recent = sessionSegments.slice(-2);
-
-  if (recognizedContainer) {
-    recognizedContainer.innerHTML = recent
-      .map((segment) => `<p>${escapeHtml(segment.recognized || "")}</p>`)
-      .join("");
+  if (!transcriptContainer) {
+    return;
   }
 
-  if (correctedContainer) {
-    correctedContainer.innerHTML = recent
-      .map((segment) => `<p>${escapeHtml(segment.corrected || "")}</p>`)
-      .join("");
+  // Start with all segments, but we'll trim if needed
+  let segmentsToShow = [...sessionSegments];
+  
+  // Build HTML for all segments
+  let html = "";
+  
+  // Render segments in reverse order (newest first, but we'll reverse the array)
+  // Actually, let's show oldest first (as user requested: "transcriptie van de vorige zin/deel")
+  for (let i = 0; i < segmentsToShow.length; i++) {
+    const segment = segmentsToShow[i];
+    const hasContent = (segment.recognized && segment.recognized.trim()) ||
+                      (segment.corrected && segment.corrected.trim()) ||
+                      (segment.translation && segment.translation.trim());
+    
+    if (!hasContent) {
+      continue;
+    }
+    
+    html += `<div class="segment" style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e0e0e0;">`;
+    
+    if (segment.recognized && segment.recognized.trim()) {
+      html += `<div style="margin-bottom: 8px;"><strong>Transcriptie:</strong> <span>${escapeHtml(segment.recognized)}</span></div>`;
+    }
+    
+    if (segment.corrected && segment.corrected.trim()) {
+      html += `<div style="margin-bottom: 8px;"><strong>Correctie:</strong> <span>${escapeHtml(segment.corrected)}</span></div>`;
+    }
+    
+    if (segment.translation && segment.translation.trim()) {
+      html += `<div style="margin-bottom: 8px;"><strong>Vertaling:</strong> <span>${escapeHtml(segment.translation)}</span></div>`;
+    }
+    
+    html += `</div>`;
   }
-
-  if (translationContainer) {
-    translationContainer.innerHTML = recent
-      .map((segment) => `<p>${escapeHtml(segment.translation || "")}</p>`)
-      .join("");
-  }
+  
+  transcriptContainer.innerHTML = html;
+  
+  // Check if container is too full and remove oldest segments if needed
+  // We'll check the scroll height vs client height
+  // If it's significantly larger, we'll remove the oldest segments
+  setTimeout(() => {
+    const container = transcriptContainer;
+    if (!container) return;
+    
+    const scrollHeight = container.scrollHeight;
+    const clientHeight = container.clientHeight;
+    const maxVisibleHeight = window.innerHeight * 0.7; // 70vh equivalent
+    
+    // If content is more than 1.5x the max visible area, start removing oldest segments
+    if (scrollHeight > maxVisibleHeight * 1.5 && sessionSegments.length > 1) {
+      // Remove the oldest segment
+      sessionSegments.shift();
+      // Re-render with fewer segments
+      renderLatestSegments();
+    } else {
+      // Auto-scroll to bottom to show newest content
+      container.scrollTop = container.scrollHeight;
+    }
+  }, 10);
 }
 
 renderLatestSegments();

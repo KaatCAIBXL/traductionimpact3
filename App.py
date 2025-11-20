@@ -250,6 +250,18 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     # Check for "Sous-titrage ST" or "Ondertiteling ST"
     if "sous-titrage st" in tekst_lower or "ondertiteling st" in tekst_lower:
         return ""
+    
+    # Check for "Ja, ik weet het." or "Oui, je sais" variants
+    if tekst_stripped in ["ja, ik weet het.", "ja, ik weet het", "oui, je sais.", "oui, je sais", "ja ik weet het.", "ja ik weet het"]:
+        return ""
+    
+    # Check for single-word sentences (only one word, possibly with punctuation)
+    # Remove punctuation and check if only one word remains
+    tekst_zonder_punctuatie = re.sub(r'[^\w\s]', '', tekst_stripped).strip()
+    woorden = tekst_zonder_punctuatie.split()
+    if len(woorden) == 1:
+        # Single word detected - filter it out
+        return ""
 
     opgeschoond = tekst
     for fragment in ONGEWENSTE_TRANSCRIPTIES:
