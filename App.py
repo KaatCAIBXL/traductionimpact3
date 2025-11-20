@@ -514,8 +514,8 @@ Opdracht 4: Als je een '.' tegenkomt, laat die staan. Voeg nooit extra zinnen to
 Opdracht 5: CRITIEK - Onlogische zinnen en speech-to-text fouten:
 - Als de zin HEEL onlogisch is en duidelijk niet past in de context, dan heeft speech-to-text het waarschijnlijk verkeerd verstaan.
 - Als je onlogische woorden tegenkomt die niet in de context passen, probeer deze te vervangen door woorden met dezelfde klanken die WEL in de context passen.
-- Gebruik de context om te raden wat er bedoeld werd. Bijvoorbeeld: als "worden" niet logisch is, kan het "woorden", "wordt", "werd" of een ander klank-gerelateerd woord zijn.
-- Pas dit toe op ALLE onlogische woorden, niet alleen specifieke woorden.
+- Gebruik de context om te raden wat er bedoeld werd.
+- Pas dit toe op ALLE onlogische woorden.
 - Als je echt niet kunt raden wat er bedoeld werd en de zin is compleet onlogisch, geef dan een lege string "" terug (wis de zin volledig).
 
 Geef alleen de gecorrigeerde zin terug die natuurlijk klinkt, zonder uitleg.
