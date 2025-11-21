@@ -32,6 +32,8 @@ let pendingSilenceFlush = false;
 let pendingSentence = null;
 let ttsAudioElement = null;
 let ttsAudioObjectUrl = null;
+// Track welke zinnen al zijn voorgelezen om duplicates te voorkomen
+let spokenSentences = new Map(); // Map van zin -> aantal keer voorgelezen
 
 const micStatusElement = document.getElementById("micStatus");
 const startButton = document.getElementById("start");
@@ -107,18 +109,19 @@ function finalizePendingSentence(force = false) {
   sessionSegments.push(cleaned);
   renderLatestSegments();
 
-  // TTS alleen aanroepen bij finalisatie als we nog niet TTS hebben aangeroepen voor deze vertaling
-  // (om dubbele calls te voorkomen - TTS wordt al aangeroepen in queueSegmentForOutput)
-  // We lezen hier alleen de complete/finalized versie voor als die anders is
+  // TTS wordt al aangeroepen in queueSegmentForOutput zodra er een vertaling binnenkomt
+  // Hier hoeven we alleen nog de complete/finalized versie voor te lezen als die anders is
+  // Maar duplicate detection in spreekVertaling voorkomt dubbele voorlezing
   if (!textOnlyCheckbox.checked && cleaned.translation && cleaned.translation.trim()) {
-    // Alleen voorlezen als dit een complete zin is (niet al voorgelezen in queueSegmentForOutput)
+    // Alleen voorlezen als dit een complete zin is en nog niet voorgelezen
     if (sentenceLooksComplete(cleaned.translation)) {
-      console.log("[TTS] Finalize: start voorlezen complete vertaling:", cleaned.translation.substring(0, 50) + "...");
+      console.log("[TTS] Finalize: controleer of complete vertaling moet worden voorgelezen:", cleaned.translation.substring(0, 50) + "...");
+      // spreekVertaling heeft nu duplicate detection, dus kan veilig worden aangeroepen
       spreekVertaling(cleaned.translation, targetLanguageSelect.value);
     }
   } else {
     if (textOnlyCheckbox.checked) {
-      console.log("[TTS] Overgeslagen: text-only modus actief");
+      console.log("[TTS] Overgeslagen: text-only modus actief (no voice)");
     } else if (!cleaned.translation || !cleaned.translation.trim()) {
       console.log("[TTS] Overgeslagen: geen vertaling beschikbaar");
     }
@@ -148,9 +151,12 @@ function queueSegmentForOutput(segment) {
 
   // TTS direct aanroepen wanneer er een nieuwe vertaling binnenkomt
   // (ook als zin nog niet compleet is, zodat gebruiker niet hoeft te wachten)
+  // Dit gebeurt vanaf het begin, tenzij "no voice" is aangevinkt
   if (!textOnlyCheckbox.checked && segment.translation && segment.translation.trim()) {
     console.log("[TTS] Nieuwe vertaling ontvangen, start voorlezen:", segment.translation.substring(0, 50) + "...");
     spreekVertaling(segment.translation, targetLanguageSelect.value);
+  } else if (textOnlyCheckbox.checked) {
+    console.log("[TTS] Overgeslagen: text-only modus actief (no voice)");
   }
 
   // Finalize alleen als zin compleet is of geforceerd moet worden
@@ -499,6 +505,15 @@ function ensureTtsAudioElement() {
   return ttsAudioElement;
 }
 
+// Functie om TTS audio te stoppen
+function stopTtsAudio() {
+  if (ttsAudioElement && !ttsAudioElement.paused) {
+    ttsAudioElement.pause();
+    ttsAudioElement.currentTime = 0;
+    console.log("[TTS] Audio gestopt");
+  }
+}
+
 function playTtsBlob(blob, lang) {
   const audioEl = ensureTtsAudioElement();
 
@@ -577,6 +592,19 @@ async function spreekVertaling(text, lang) {
     console.log("[TTS] Geen tekst om voor te lezen");
     return;
   }
+
+  // Duplicate detection: voorkom dat dezelfde zin meer dan 2 keer wordt voorgelezen
+  const normalizedText = trimmed.toLowerCase().trim();
+  const count = spokenSentences.get(normalizedText) || 0;
+  
+  if (count >= 2) {
+    console.log(`[TTS] ⚠️ Zin al ${count} keer voorgelezen, overslaan: "${trimmed.substring(0, 50)}..."`);
+    return;
+  }
+  
+  // Verhoog teller
+  spokenSentences.set(normalizedText, count + 1);
+  console.log(`[TTS] Zin wordt voorgelezen (${count + 1}/2): "${trimmed.substring(0, 50)}${trimmed.length > 50 ? '...' : ''}"`);
 
   console.log(`[TTS] Vraag audio aan voor: "${trimmed.substring(0, 50)}${trimmed.length > 50 ? '...' : ''}" (taal: ${lang})`);
 
@@ -1215,6 +1243,7 @@ if (startButton) {
     isSpeaking = false;
     resetPendingSentence();
     sessionSegments = [];
+    spokenSentences.clear(); // Reset duplicate tracking bij nieuwe sessie
     renderLatestSegments();
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -1277,14 +1306,15 @@ if (pauseButton) {
     console.log(`[Pause] Huidige state: ${state}, isPaused: ${isPaused}`);
 
     if (state === "recording" && !isPaused) {
-      // Pauzeren
+      // Pauzeren: stop zowel opname als TTS
       try {
         triggerSilenceFlush();
         mediaRecorder.pause();
+        stopTtsAudio(); // Stop TTS audio
         isPaused = true;
         pauseButton.innerText = "▶️ continue ▶️";
         setMicStatus("paused", "Opname gepauzeerd");
-        console.log("[Pause] Opname gepauzeerd");
+        console.log("[Pause] Opname en TTS gepauzeerd");
       } catch (error) {
         console.error("[Pause] Fout bij pauzeren:", error);
       }
