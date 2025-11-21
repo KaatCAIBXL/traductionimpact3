@@ -1337,31 +1337,65 @@ if (stopButton) {
 
 function downloadSessionDocument() {
   if (!sessionSegments.length) {
+    console.warn("[Download] Geen segmenten om te downloaden");
+    alert("Geen transcriptie om te downloaden.");
     return;
   }
 
-  const parts = sessionSegments.map((segment, index) => {
-    const nummer = index + 1;
-    return [
-      `Deel ${nummer}`,
-      `Herkenning: ${segment.recognized || ""}`,
-      `Correctie: ${segment.corrected || ""}`,
-      `Vertaling: ${segment.translation || ""}`,
-    ].join("\n");
-  });
+  try {
+    const parts = sessionSegments.map((segment, index) => {
+      const nummer = index + 1;
+      return [
+        `Deel ${nummer}`,
+        `Herkenning: ${segment.recognized || ""}`,
+        `Correctie: ${segment.corrected || ""}`,
+        `Vertaling: ${segment.translation || ""}`,
+      ].join("\n");
+    });
 
-  const content = parts.join("\n\n");
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `transcriptie-${new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const content = parts.join("\n\n");
+    
+    if (!content || content.trim().length === 0) {
+      console.warn("[Download] Lege inhoud om te downloaden");
+      alert("Geen inhoud om te downloaden.");
+      return;
+    }
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    
+    if (!blob || blob.size === 0) {
+      console.error("[Download] Kon blob niet maken of blob is leeg");
+      alert("Erreur lors du téléchargement du fichier: Kon bestand niet maken.");
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    
+    // Sanitize filename - remove invalid characters
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `transcriptie-${timestamp}.txt`;
+    link.download = filename;
+    
+    // Make link invisible but accessible
+    link.style.display = "none";
+    document.body.appendChild(link);
+    
+    // Trigger download
+    link.click();
+    
+    // Cleanup
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 1000);
+    
+    console.log(`[Download] Bestand gedownload: ${filename} (${blob.size} bytes)`);
+  } catch (error) {
+    console.error("[Download] Fout bij downloaden:", error);
+    alert("Erreur lors du téléchargement du fichier: " + (error.message || "Onbekende fout"));
+  }
 }
 
 
