@@ -1361,7 +1361,21 @@ function downloadSessionDocument() {
       return;
     }
 
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    // Validate content encoding
+    let blob;
+    try {
+      blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    } catch (blobError) {
+      console.error("[Download] Fout bij maken van blob:", blobError);
+      // Fallback: probeer zonder charset
+      try {
+        blob = new Blob([content], { type: "text/plain" });
+      } catch (fallbackError) {
+        console.error("[Download] Fallback blob creatie faalde:", fallbackError);
+        alert("Erreur lors du téléchargement du fichier: Kon bestand niet maken.");
+        return;
+      }
+    }
     
     if (!blob || blob.size === 0) {
       console.error("[Download] Kon blob niet maken of blob is leeg");
@@ -1369,32 +1383,87 @@ function downloadSessionDocument() {
       return;
     }
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    
     // Sanitize filename - remove invalid characters for all operating systems
     // Invalid characters: < > : " / \ | ? * and control characters (0-31)
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     // Remove any remaining invalid characters
     const sanitizedTimestamp = timestamp.replace(/[<>:"/\\|?*\x00-\x1F]/g, "");
     const filename = `transcriptie-${sanitizedTimestamp}.txt`;
-    link.download = filename;
-    
-    // Make link invisible but accessible
-    link.style.display = "none";
-    document.body.appendChild(link);
-    
-    // Trigger download
-    link.click();
-    
-    // Cleanup
-    setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 1000);
-    
-    console.log(`[Download] Bestand gedownload: ${filename} (${blob.size} bytes)`);
+
+    // Try method 1: Create download link
+    let url;
+    let link;
+    try {
+      url = URL.createObjectURL(blob);
+      if (!url) {
+        throw new Error("URL.createObjectURL returned null");
+      }
+
+      link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.style.display = "none";
+      link.setAttribute("download", filename); // Extra attribute for better browser support
+      
+      document.body.appendChild(link);
+      
+      // Trigger download with error handling
+      try {
+        link.click();
+        console.log(`[Download] Bestand gedownload: ${filename} (${blob.size} bytes)`);
+      } catch (clickError) {
+        console.error("[Download] Fout bij link.click():", clickError);
+        // Fallback: open in new window
+        window.open(url, "_blank");
+        alert("Download gestart. Als de download niet automatisch start, controleer uw browser instellingen.");
+      }
+      
+      // Cleanup
+      setTimeout(() => {
+        try {
+          if (link && link.parentNode) {
+            document.body.removeChild(link);
+          }
+          if (url) {
+            URL.revokeObjectURL(url);
+          }
+        } catch (cleanupError) {
+          console.warn("[Download] Fout bij cleanup:", cleanupError);
+        }
+      }, 1000);
+      
+    } catch (urlError) {
+      console.error("[Download] Fout bij maken van download URL:", urlError);
+      
+      // Fallback method 2: Data URL (for smaller files)
+      if (blob.size < 2 * 1024 * 1024) { // Only for files < 2MB
+        try {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            const dataUrl = e.target.result;
+            const fallbackLink = document.createElement("a");
+            fallbackLink.href = dataUrl;
+            fallbackLink.download = filename;
+            fallbackLink.style.display = "none";
+            document.body.appendChild(fallbackLink);
+            fallbackLink.click();
+            setTimeout(() => {
+              document.body.removeChild(fallbackLink);
+            }, 1000);
+            console.log(`[Download] Bestand gedownload via fallback: ${filename}`);
+          };
+          reader.onerror = function() {
+            alert("Erreur lors du téléchargement du fichier: Kon bestand niet lezen.");
+          };
+          reader.readAsDataURL(blob);
+        } catch (fallbackError) {
+          console.error("[Download] Fallback methode faalde:", fallbackError);
+          alert("Erreur lors du téléchargement du fichier: " + (fallbackError.message || "Onbekende fout"));
+        }
+      } else {
+        alert("Erreur lors du téléchargement du fichier: Bestand te groot voor alternatieve methode.");
+      }
+    }
   } catch (error) {
     console.error("[Download] Fout bij downloaden:", error);
     alert("Erreur lors du téléchargement du fichier: " + (error.message || "Onbekende fout"));
