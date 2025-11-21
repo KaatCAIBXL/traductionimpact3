@@ -148,6 +148,34 @@ ONGEWENSTE_TRANSCRIPTIES = [
     "bedankt om te luisteren",
     "bedankt om te kijken",
     "bedankt om te kijken naar deze video",
+    "Dankjewel en tot de volgende keer!",
+    "Dankjewel en tot de volgende keer",
+    "dankjewel en tot de volgende keer!",
+    "dankjewel en tot de volgende keer",
+    "Merci et à la prochaine fois !",
+    "Merci et à la prochaine fois",
+    "merci et à la prochaine fois !",
+    "merci et à la prochaine fois",
+    "Merci et à la prochaine fois.",
+    "merci et à la prochaine fois.",
+    "Dank u wel.",
+    "Dank u wel",
+    "dank u wel.",
+    "dank u wel",
+    "Dank u",
+    "dank u",
+    "Merci beaucoup",
+    "merci beaucoup",
+    "Merci beaucoup.",
+    "merci beaucoup.",
+    "Je vous remercie",
+    "je vous remercie",
+    "Je vous remercie.",
+    "je vous remercie.",
+    "Je te remercie",
+    "je te remercie",
+    "Je te remercie.",
+    "je te remercie.",
 ]
 
 
@@ -239,10 +267,10 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     # Check for common closing phrases
     tekst_stripped = tekst_lower.strip()
     # French closing phrases
-    if tekst_stripped in ["merci.", "merci", "merci. au revoir.", "merci. au revoir", "ciao !", "ciao!", "ciao", "a bientôt", "a bientot", "à bientôt", "à bientot"]:
+    if tekst_stripped in ["merci.", "merci", "merci. au revoir.", "merci. au revoir", "ciao !", "ciao!", "ciao", "a bientôt", "a bientot", "à bientôt", "à bientot", "merci et à la prochaine fois !", "merci et à la prochaine fois", "merci et à la prochaine fois.", "merci beaucoup", "merci beaucoup.", "je vous remercie", "je vous remercie.", "je te remercie", "je te remercie."]:
         return ""
     # Dutch closing phrases
-    if tekst_stripped in ["bedankt.", "bedankt", "bedankt. tot ziens.", "bedankt. tot ziens", "tot ziens.", "tot ziens", "dag!", "dag"]:
+    if tekst_stripped in ["bedankt.", "bedankt", "bedankt. tot ziens.", "bedankt. tot ziens", "tot ziens.", "tot ziens", "dag!", "dag", "dankjewel en tot de volgende keer!", "dankjewel en tot de volgende keer", "dank u wel.", "dank u wel", "dank u"]:
         return ""
     # Check for "501" (common subtitle error code)
     if tekst_stripped == "501":
