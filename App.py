@@ -255,6 +255,10 @@ def verwijder_ongewenste_transcripties(tekst: str) -> str:
     if tekst_stripped in ["ja, ik weet het.", "ja, ik weet het", "oui, je sais.", "oui, je sais", "ja ik weet het.", "ja ik weet het"]:
         return ""
     
+    # Check for "Ja, ik ben er" variants (common repetition issue)
+    if tekst_stripped in ["ja, ik ben er.", "ja, ik ben er", "ja ik ben er.", "ja ik ben er", "ja ik ben er!", "ja, ik ben er!"]:
+        return ""
+    
     # Check for single-word sentences (only one word, possibly with punctuation)
     # Remove punctuation and check if only one word remains
     tekst_zonder_punctuatie = re.sub(r'[^\w\s]', '', tekst_stripped).strip()
@@ -513,6 +517,8 @@ def corrigeer_zin_met_context(nieuwe_zin, vorige_zinnen):
 BELANGRIJK: Als de originele zin een correcte zin is, mag je die niet veranderen.
 ENKEL als je merkt dat iets onlogisch is, incorrect is, of als je een Bijbelvers tegenkomt, mag je aanpassingen doen.
 
+KRITIEK: HERHAAL NOOIT tekst uit de context! De context is alleen bedoeld om te begrijpen wat er gezegd wordt, NIET om tekst uit de context opnieuw te gebruiken of toe te voegen aan de nieuwe zin.
+
 Opdracht 1: Als je een Bijbeltekst uit een erkende vertaling herkent, herstel die nauwkeurig.
 
 Opdracht 2: Als de zin een gebed bevat, pas de regels toe uit:
@@ -526,11 +532,12 @@ Opdracht 4: Als je een '.' tegenkomt, laat die staan. Voeg nooit extra zinnen to
 Opdracht 5: CRITIEK - Onlogische zinnen en speech-to-text fouten:
 - Als de zin HEEL onlogisch is en duidelijk niet past in de context, dan heeft speech-to-text het waarschijnlijk verkeerd verstaan.
 - Als je onlogische woorden tegenkomt die niet in de context passen, probeer deze te vervangen door woorden met dezelfde klanken die WEL in de context passen.
-- Gebruik de context om te raden wat er bedoeld werd.
+- Gebruik de context ALLEEN om te begrijpen wat er bedoeld werd, NIET om tekst uit de context te kopiëren of herhalen.
 - Pas dit toe op ALLE onlogische woorden.
 - Als je echt niet kunt raden wat er bedoeld werd en de zin is compleet onlogisch, geef dan een lege string "" terug (wis de zin volledig).
+- HERHAAL NOOIT woorden of zinnen die al in de context staan, ook niet als je denkt dat het logisch is.
 
-Geef alleen de gecorrigeerde zin terug die natuurlijk klinkt, zonder uitleg.
+Geef alleen de gecorrigeerde zin terug die natuurlijk klinkt, zonder uitleg. Gebruik ALLEEN de woorden uit de nieuwe zin, niet uit de context.
 
 Geef NOOIT opmerkingen. Enkel vertaling of niets.
 Context: "{context}"
@@ -602,8 +609,14 @@ def _transcribe_with_local_whisper(path: str, *, language_hint: Optional[str] = 
         options["initial_prompt"] = initial_prompt[:200]  # Limit length
     
     result = model.transcribe(path, **options)
-    text = result.get("text", "") if isinstance(result, dict) else ""
-    return SimpleNamespace(text=text)
+    if isinstance(result, dict):
+        text = result.get("text", "")
+        language = result.get("language")
+        return SimpleNamespace(text=text, language=language)
+    else:
+        text = result.text if hasattr(result, "text") else ""
+        language = result.language if hasattr(result, "language") else None
+        return SimpleNamespace(text=text, language=language)
 
 
 @app.route("/api/transcribe", methods=["POST"])
@@ -1010,6 +1023,8 @@ def vertaal_audio():
     bron_taal = request.form.get("from", "fr").lower()
     doel_taal = request.form.get("to", "nl").lower()
     enkel_tekst = request.form.get("textOnly", "false") == "true"
+    interpreter_lang = request.form.get("interpreter_lang", "").lower()
+    interpreter_lang_hint = map_whisper_language_hint(interpreter_lang) if interpreter_lang else None
     whisper_language_hint = map_whisper_language_hint(bron_taal)
 
     temp_input_path = None
@@ -1198,6 +1213,33 @@ def vertaal_audio():
                     "silenceDetected": True,
                 }
             )
+
+        # Check if detected language matches interpreter language - if so, ignore this transcription
+        if interpreter_lang_hint:
+            detected_language = None
+            # Try to get language from response (OpenAI API returns it as attribute)
+            if hasattr(transcript_response, "language"):
+                detected_language = transcript_response.language
+            elif isinstance(transcript_response, dict):
+                detected_language = transcript_response.get("language")
+            
+            # Normalize detected language for comparison
+            if detected_language:
+                detected_lang_normalized = detected_language.lower().strip()
+                interpreter_lang_normalized = interpreter_lang_hint.lower().strip()
+                
+                # Check if detected language matches interpreter language
+                if detected_lang_normalized == interpreter_lang_normalized:
+                    print(f"[i] Gedetecteerde taal ({detected_language}) komt overeen met tolk-taal ({interpreter_lang}), transcriptie genegeerd.")
+                    return jsonify(
+                        {
+                            "recognized": "",
+                            "corrected": "",
+                            "translation": "",
+                            "silenceDetected": True,
+                            "interpreterFiltered": True,
+                        }
+                    )
 
         tekst = verwijder_ongewenste_transcripties(ruwe_tekst)
 

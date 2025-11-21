@@ -41,6 +41,7 @@ const textOnlyCheckbox = document.getElementById("textOnly");
 const microphoneSelect = document.getElementById("microphoneSelect");
 const sourceLanguageSelect = document.getElementById("sourceLanguage");
 const targetLanguageSelect = document.getElementById("languageSelect");
+const interpreterLanguageSelect = document.getElementById("interpreterLanguage");
 const transcriptContainer = document.getElementById("transcriptContainer");
 let micStatusState = "idle";
 
@@ -1132,6 +1133,9 @@ async function handleDataAvailable(event) {
   formData.append("from", sourceLanguageSelect.value);
   formData.append("to", targetLanguageSelect.value);
   formData.append("textOnly", textOnlyCheckbox.checked ? "true" : "false");
+  if (interpreterLanguageSelect && interpreterLanguageSelect.value) {
+    formData.append("interpreter_lang", interpreterLanguageSelect.value);
+  }
 
   const unsupportedByDeepL = [
     "sw",
