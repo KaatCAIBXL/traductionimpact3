@@ -1373,9 +1373,12 @@ function downloadSessionDocument() {
     const link = document.createElement("a");
     link.href = url;
     
-    // Sanitize filename - remove invalid characters
+    // Sanitize filename - remove invalid characters for all operating systems
+    // Invalid characters: < > : " / \ | ? * and control characters (0-31)
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const filename = `transcriptie-${timestamp}.txt`;
+    // Remove any remaining invalid characters
+    const sanitizedTimestamp = timestamp.replace(/[<>:"/\\|?*\x00-\x1F]/g, "");
+    const filename = `transcriptie-${sanitizedTimestamp}.txt`;
     link.download = filename;
     
     // Make link invisible but accessible
