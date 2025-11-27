@@ -18,6 +18,7 @@ from pydub.exceptions import CouldntDecodeError
 from pydub.effects import normalize, low_pass_filter
 import edge_tts
 from edge_tts import exceptions as edge_tts_exceptions
+import numpy as np
 
 try:
     import whisper
@@ -1380,9 +1381,164 @@ def vertaal_audio():
         if temp_input_path and os.path.exists(temp_input_path):
             os.remove(temp_input_path)
 #-------------------------------------------------------einde document
+@app.route("/api/generate-song", methods=["POST"])
+def generate_song():
+    """
+    Genereer een liedje uit lyrics, vergelijkbaar met Musicful.ai.
+    Accepteert lyrics en genereert vocals (TTS) + optioneel instrumentale muziek.
+    """
+    try:
+        lyrics = request.form.get("lyrics", "").strip()
+        language = request.form.get("language", "fr").strip()
+        genre = request.form.get("genre", "pop").strip()  # pop, rock, rap, etc.
+        style = request.form.get("style", "").strip()  # Optionele stijl beschrijving
+        add_instrumental = request.form.get("add_instrumental", "true").lower() == "true"
+        
+        if not lyrics:
+            return jsonify({"error": "Geen lyrics opgegeven"}), 400
+        
+        # Genereer vocals met TTS
+        print(f"[Song Generation] Genereer vocals voor {len(lyrics)} karakters in taal {language}")
+        vocals_path = _generate_tts_file(lyrics, language)
+        
+        vocals_audio = AudioSegment.from_mp3(vocals_path)
+        vocals_duration = len(vocals_audio)
+        
+        # Optioneel: voeg instrumentale muziek toe
+        final_audio = vocals_audio
+        instrumental_info = {"added": False}
+        
+        if add_instrumental:
+            try:
+                # Voor nu: genereer een eenvoudige instrumentale track
+                # Later kan dit uitgebreid worden met MusicGen, Suno API, etc.
+                instrumental_audio = _generate_simple_instrumental(
+                    duration_ms=vocals_duration,
+                    genre=genre,
+                    style=style
+                )
+                
+                if instrumental_audio:
+                    # Mix vocals en instrumentale muziek (vocals iets luider)
+                    vocals_audio = vocals_audio.apply_gain(3)  # Vocals 3dB luider
+                    final_audio = vocals_audio.overlay(instrumental_audio)
+                    instrumental_info = {"added": True, "genre": genre}
+                    print(f"[Song Generation] Instrumentale muziek toegevoegd ({genre})")
+            except Exception as e:
+                print(f"[Song Generation] Kon instrumentale muziek niet toevoegen: {e}")
+                # Gebruik alleen vocals als fallback
+                final_audio = vocals_audio
+        
+        # Sla het finale liedje op
+        output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        output_path.close()
+        final_audio.export(output_path.name, format="mp3", bitrate="192k")
+        
+        @after_this_request
+        def cleanup_files(response):
+            try:
+                if os.path.exists(vocals_path):
+                    os.remove(vocals_path)
+                if os.path.exists(output_path.name):
+                    os.remove(output_path.name)
+            except Exception as e:
+                print(f"[!] Kon bestanden niet verwijderen: {e}")
+            return response
+        
+        return send_file(
+            output_path.name,
+            mimetype="audio/mpeg",
+            as_attachment=True,
+            download_name=f"song_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+        )
+        
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        print(f"[!] Fout bij song generatie: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Fout bij song generatie: {str(e)}"}), 500
+
+
+def _generate_simple_instrumental(duration_ms: int, genre: str = "pop", style: str = "") -> Optional[AudioSegment]:
+    """
+    Genereer een eenvoudige instrumentale track.
+    Dit is een basis implementatie - kan later uitgebreid worden met:
+    - MusicGen (Meta)
+    - Suno AI API
+    - Mubert API
+    - Of andere muziek generatie tools
+    """
+    try:
+        # Voor nu: genereer een eenvoudige beat/ritme met pydub
+        # Dit is een placeholder - echte implementatie vereist een muziek generatie model
+        
+        # Maak een eenvoudige drum beat als placeholder
+        sample_rate = 44100
+        duration_seconds = duration_ms / 1000.0
+        
+        # Genereer een eenvoudige baslijn (sine wave)
+        # Eenvoudige beat pattern
+        beat_freq = 60  # BPM
+        beat_interval = 60.0 / beat_freq
+        
+        # Maak een lege audio track
+        silence = AudioSegment.silent(duration=duration_ms)
+        
+        # Voeg een eenvoudige bas toe (placeholder)
+        # In productie zou je hier een echte muziek generatie API gebruiken
+        t = np.linspace(0, duration_seconds, int(sample_rate * duration_seconds))
+        
+        # Eenvoudige baslijn (C major chord)
+        bass_freq = 65.41  # C2
+        bass_wave = np.sin(2 * np.pi * bass_freq * t) * 0.1
+        
+        # Drum pattern (kick op elke beat)
+        kick_pattern = np.zeros_like(t)
+        for i in range(int(duration_seconds * beat_freq / 60)):
+            beat_time = i * beat_interval
+            if beat_time < duration_seconds:
+                start_idx = int(beat_time * sample_rate)
+                end_idx = min(start_idx + int(0.1 * sample_rate), len(kick_pattern))
+                if end_idx > start_idx:
+                    kick_pattern[start_idx:end_idx] = np.sin(2 * np.pi * 40 * t[start_idx:end_idx]) * 0.15
+        
+        # Combineer
+        instrumental_wave = bass_wave + kick_pattern
+        
+        # Normaliseer
+        max_val = np.max(np.abs(instrumental_wave))
+        if max_val > 0:
+            instrumental_wave = instrumental_wave / max_val * 0.3  # 30% volume
+        
+        # Converteer naar AudioSegment
+        instrumental_array = (instrumental_wave * 32767).astype(np.int16)
+        instrumental_audio = AudioSegment(
+            instrumental_array.tobytes(),
+            frame_rate=sample_rate,
+            sample_width=2,
+            channels=1
+        )
+        
+        # Maak stereo
+        instrumental_audio = instrumental_audio.set_channels(2)
+        
+        return instrumental_audio
+        
+    except Exception as e:
+        print(f"[!] Fout bij instrumentale generatie: {e}")
+        return None
+
+
 @app.route("/resultaat")
 def resultaat():
     return send_from_directory(".", "live_vertaal.html")
+
+@app.route("/song-generator")
+def song_generator():
+    """Route voor de AI liedjes generator interface."""
+    return send_from_directory(".", "song_generator.html")
 
 # -------------------- START SERVER --------------------
 if __name__ == "__main__":

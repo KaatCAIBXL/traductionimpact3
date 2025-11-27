@@ -741,8 +741,7 @@ async function sniffMimeTypeFromChunks(chunks) {
     }
   } catch (error) {
     console.warn("Kon bestandskop niet inspecteren:", error);
-
-    }
+  }
 
   return "";
 }

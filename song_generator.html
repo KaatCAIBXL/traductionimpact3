@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Liedjes Generator - Net zoals Musicful.ai</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        textarea, input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            min-height: 150px;
+            resize: vertical;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .audio-player {
+            margin-top: 20px;
+            display: none;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 AI Liedjes Generator</h1>
+        <p style="text-align: center; color: #666;">Voer lyrics in en AI genereert de rest - net zoals Musicful.ai!</p>
+        
+        <form id="songForm">
+            <div class="form-group">
+                <label for="lyrics">Lyrics *</label>
+                <textarea id="lyrics" name="lyrics" placeholder="Voer hier je lyrics in..." required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="language">Taal</label>
+                <select id="language" name="language">
+                    <option value="fr">Frans</option>
+                    <option value="nl">Nederlands</option>
+                    <option value="en">Engels</option>
+                    <option value="de">Duits</option>
+                    <option value="es">Spaans</option>
+                    <option value="it">Italiaans</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="genre">Genre</label>
+                <select id="genre" name="genre">
+                    <option value="pop">Pop</option>
+                    <option value="rock">Rock</option>
+                    <option value="rap">Rap</option>
+                    <option value="jazz">Jazz</option>
+                    <option value="electronic">Electronic</option>
+                    <option value="classical">Classical</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="style">Stijl (optioneel)</label>
+                <input type="text" id="style" name="style" placeholder="bijv. upbeat, melancholic, energetic...">
+            </div>
+            
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="add_instrumental" name="add_instrumental" checked>
+                <label for="add_instrumental" style="margin: 0;">Voeg instrumentale muziek toe</label>
+            </div>
+            
+            <button type="submit" id="generateBtn">🎵 Genereer Liedje</button>
+        </form>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="audio-player" id="audioPlayer">
+            <h3>Je gegenereerde liedje:</h3>
+            <audio id="audioElement" controls style="width: 100%;"></audio>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('songForm');
+        const statusDiv = document.getElementById('status');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const audioElement = document.getElementById('audioElement');
+        const generateBtn = document.getElementById('generateBtn');
+
+        function showStatus(message, type = 'info') {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+        }
+
+        function hideStatus() {
+            statusDiv.style.display = 'none';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(form);
+            const lyrics = formData.get('lyrics').trim();
+            
+            if (!lyrics) {
+                showStatus('Voer alstublieft lyrics in!', 'error');
+                return;
+            }
+            
+            generateBtn.disabled = true;
+            generateBtn.textContent = '⏳ Bezig met genereren...';
+            hideStatus();
+            audioPlayer.style.display = 'none';
+            
+            try {
+                showStatus('Liedje wordt gegenereerd... Dit kan even duren.', 'info');
+                
+                const response = await fetch('/api/generate-song', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || `Server error: ${response.status}`);
+                }
+                
+                // Download het bestand
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                
+                audioElement.src = url;
+                audioPlayer.style.display = 'block';
+                
+                showStatus('✅ Liedje succesvol gegenereerd!', 'success');
+                
+                // Automatisch downloaden
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `song_${new Date().getTime()}.mp3`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus(`❌ Fout: ${error.message}`, 'error');
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.textContent = '🎵 Genereer Liedje';
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
+
+
