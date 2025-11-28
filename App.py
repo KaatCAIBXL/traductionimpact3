@@ -11,6 +11,8 @@ import deepl
 from dotenv import load_dotenv
 from datetime import datetime
 import re
+import requests
+import base64
 
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
@@ -34,6 +36,7 @@ load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEEPL_API_KEY = os.getenv("DEEPL_API_KEY")
+MODELLAB_API_KEY = os.getenv("MODELLAB_API_KEY") or os.getenv("FLUX2PRO_API_KEY")
 
 openai_client = None
 if OPENAI_API_KEY:
@@ -52,6 +55,13 @@ if DEEPL_API_KEY:
         deepl_translator = deepl.Translator(DEEPL_API_KEY)
     except Exception as exc:
         print(f"[!] Kon DeepL vertaler niet initialiseren: {exc}")
+
+# ModelsLab Flux 2 Pro API voor beeldgeneratie
+modelslab_api_key = MODELLAB_API_KEY
+if modelslab_api_key:
+    print("[i] ModelsLab API key geladen voor Flux 2 Pro Text To Image")
+else:
+    print("[!] ModelsLab API key niet gevonden. Beeldgeneratie zal niet beschikbaar zijn.")
 
 vorige_zinnen = []
 context_zinnen = []
@@ -1539,6 +1549,137 @@ def resultaat():
 def song_generator():
     """Route voor de AI liedjes generator interface."""
     return send_from_directory(".", "song_generator.html")
+
+
+# -------------------- BEELDGENERATIE MET MODELLAB FLUX 2 PRO --------------------
+def _generate_image_with_modelslab(prompt: str, width: int = 1024, height: int = 1024) -> Optional[str]:
+    """
+    Genereer een afbeelding met ModelsLab Flux 2 Pro Text To Image API.
+    Retourneert het pad naar het opgeslagen afbeeldingbestand, of None bij fout.
+    
+    Let op: De API endpoint en request format kunnen verschillen per ModelsLab API versie.
+    Controleer de ModelsLab documentatie voor de exacte endpoint en parameters.
+    """
+    if not modelslab_api_key:
+        print("[!] ModelsLab API key niet beschikbaar voor beeldgeneratie")
+        return None
+    
+    try:
+        # ModelsLab API endpoint - mogelijk aanpassen volgens ModelsLab documentatie
+        # Voorbeeld: https://api.modelslab.com/v1/images/generations
+        # Of: https://modelslab.com/api/v1/text2img
+        api_url = os.getenv("MODELLAB_API_URL", "https://api.modelslab.com/v1/images/generations")
+        
+        headers = {
+            "Authorization": f"Bearer {modelslab_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "flux-2-pro",
+            "prompt": prompt,
+            "width": width,
+            "height": height,
+            "num_images": 1
+        }
+        
+        response = requests.post(api_url, json=payload, headers=headers, timeout=60)
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        # Haal de afbeelding URL of base64 data op (afhankelijk van API response format)
+        if "data" in result and len(result["data"]) > 0:
+            image_data = result["data"][0]
+            
+            # Als de API een URL retourneert
+            if "url" in image_data:
+                image_url = image_data["url"]
+                # Download de afbeelding
+                img_response = requests.get(image_url, timeout=30)
+                img_response.raise_for_status()
+                image_bytes = img_response.content
+            # Als de API base64 data retourneert
+            elif "b64_json" in image_data:
+                image_bytes = base64.b64decode(image_data["b64_json"])
+            else:
+                print("[!] Onbekend response format van ModelsLab API")
+                return None
+            
+            # Sla de afbeelding op in een tijdelijk bestand
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                tmp.write(image_bytes)
+                return tmp.name
+        
+        print("[!] Geen afbeelding data in ModelsLab API response")
+        return None
+        
+    except requests.exceptions.RequestException as e:
+        print(f"[!] Fout bij ModelsLab API request: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_detail = e.response.json()
+                print(f"[!] API error details: {error_detail}")
+            except:
+                print(f"[!] API error response: {e.response.text}")
+        return None
+    except Exception as e:
+        print(f"[!] Onverwachte fout bij beeldgeneratie: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+@app.route("/api/generate-image", methods=["POST"])
+def generate_image():
+    """
+    Genereer een afbeelding met ModelsLab Flux 2 Pro Text To Image.
+    Accepteert een text prompt en genereert een afbeelding.
+    """
+    if not modelslab_api_key:
+        return jsonify({"error": "ModelsLab API key niet geconfigureerd"}), 503
+    
+    try:
+        prompt = request.form.get("prompt") or request.json.get("prompt") if request.is_json else None
+        if not prompt:
+            return jsonify({"error": "Geen prompt opgegeven"}), 400
+        
+        width = int(request.form.get("width", 1024) or request.json.get("width", 1024) if request.is_json else 1024)
+        height = int(request.form.get("height", 1024) or request.json.get("height", 1024) if request.is_json else 1024)
+        
+        # Valideer dimensies
+        if width < 64 or width > 2048 or height < 64 or height > 2048:
+            return jsonify({"error": "Afmetingen moeten tussen 64 en 2048 pixels zijn"}), 400
+        
+        print(f"[Image Generation] Genereer afbeelding voor prompt: {prompt[:50]}...")
+        image_path = _generate_image_with_modelslab(prompt, width=width, height=height)
+        
+        if not image_path:
+            return jsonify({"error": "Kon afbeelding niet genereren"}), 500
+        
+        @after_this_request
+        def cleanup_file(response):
+            try:
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+            except Exception as e:
+                print(f"[!] Kon afbeeldingbestand niet verwijderen: {e}")
+            return response
+        
+        return send_file(
+            image_path,
+            mimetype="image/png",
+            as_attachment=True,
+            download_name=f"generated_image_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        )
+        
+    except ValueError as e:
+        return jsonify({"error": f"Ongeldige parameter: {str(e)}"}), 400
+    except Exception as e:
+        print(f"[!] Fout bij image generatie: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Fout bij image generatie: {str(e)}"}), 500
 
 # -------------------- START SERVER --------------------
 if __name__ == "__main__":
