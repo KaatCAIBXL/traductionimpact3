@@ -228,26 +228,23 @@ BLACKLIST_TOKEN_COMBOS = [
 ]
 
 
-def _apply_subscription_corrections(tekst: str) -> str:
+_SUBSCRIPTION_REPLACEMENTS = None
+
+
+def _load_subscription_replacements():
     """
-    Pas vaste woord-/zinsniveaucorrecties toe vóór de AI-correctie.
+    Laad vaste correcties uit een optioneel tekstbestand
+    `subscription_corrections.txt` in dezelfde map als deze App.py.
 
-    Deze functie is bedoeld voor veelvoorkomende fouten in ondertitels /
-    transcripties (bijv. namen of bijbelse termen) die we altijd op een
-    vaste manier willen herschrijven nog vóór GPT-contextcorrectie.
+    Formaat per regel:
+        fout -> correct
 
-    Let op:
-    - De vervangingen zijn *case‑gevoelig* en worden alleen toegepast
-      op exacte woord-/zinsdelen.
-    - Sommige varianten (bijv. 'pape' en 'Pape') staan daarom elk apart
-      in de lijst.
+    Regels die leeg zijn of met '#' beginnen worden genegeerd.
+    Als het bestand ontbreekt of fout is, vallen we terug op de
+    ingebouwde lijst hieronder.
     """
-
-    if not tekst:
-        return tekst
-
-    # 'mogelijke fouten' -> 'correctie'
-    vervangingen = [
+    # Ingebouwde defaults (zoals in je document)
+    defaults = [
         ("pape", "Pasteur Anaclet"),
         ("Pape", "Pasteur Anaclet"),
         ("passeur", "pasteur"),
@@ -271,12 +268,49 @@ def _apply_subscription_corrections(tekst: str) -> str:
         ("enchantement", "changement"),
     ]
 
+    cfg_path = Path(__file__).resolve().parent / "subscription_corrections.txt"
+    if not cfg_path.exists():
+        return defaults
+
+    replacements = []
+    try:
+        for raw_line in cfg_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "->" not in line:
+                continue
+            wrong, correct = line.split("->", 1)
+            wrong = wrong.strip()
+            correct = correct.strip()
+            if wrong and correct:
+                replacements.append((wrong, correct))
+    except Exception as exc:
+        print(f"[!] Kon subscription_corrections.txt niet inlezen, gebruik defaults: {exc}")
+        return defaults
+
+    return replacements or defaults
+
+
+def _apply_subscription_corrections(tekst: str) -> str:
+    """
+    Pas vaste woord-/zinsniveaucorrecties toe vóór de AI-correctie.
+    """
+
+    if not tekst:
+        return tekst
+
+    global _SUBSCRIPTION_REPLACEMENTS
+    if _SUBSCRIPTION_REPLACEMENTS is None:
+        _SUBSCRIPTION_REPLACEMENTS = _load_subscription_replacements()
+
     # Langste patronen eerst, zodat langere zinsdelen voorrang krijgen.
-    vervangingen.sort(key=lambda item: len(item[0]), reverse=True)
+    vervangingen = sorted(
+        _SUBSCRIPTION_REPLACEMENTS, key=lambda item: len(item[0]), reverse=True
+    )
 
     resultaat = tekst
     for fout, correct in vervangingen:
-        # Gebruik woordgrenzen zodat we geen delen van langere woorden vervangen.
         patroon = re.compile(rf"\b{re.escape(fout)}\b")
         resultaat = patroon.sub(correct, resultaat)
 
