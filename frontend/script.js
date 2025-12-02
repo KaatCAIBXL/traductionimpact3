@@ -32,8 +32,6 @@ let pendingSilenceFlush = false;
 let pendingSentence = null;
 let ttsAudioElement = null;
 let ttsAudioObjectUrl = null;
-// Track welke zinnen al zijn voorgelezen om duplicates te voorkomen
-let spokenSentences = new Map(); // Map van zin -> aantal keer voorgelezen
 
 const micStatusElement = document.getElementById("micStatus");
 const startButton = document.getElementById("start");
@@ -113,12 +111,12 @@ function finalizePendingSentence(force = false) {
   // Hier hoeven we alleen nog de complete/finalized versie voor te lezen als die anders is
   // Maar duplicate detection in spreekVertaling voorkomt dubbele voorlezing
   if (!textOnlyCheckbox.checked && cleaned.translation && cleaned.translation.trim()) {
-    // Alleen voorlezen als dit een complete zin is en nog niet voorgelezen
-    if (sentenceLooksComplete(cleaned.translation)) {
-      console.log("[TTS] Finalize: controleer of complete vertaling moet worden voorgelezen:", cleaned.translation.substring(0, 50) + "...");
-      // spreekVertaling heeft nu duplicate detection, dus kan veilig worden aangeroepen
-      spreekVertaling(cleaned.translation, targetLanguageSelect.value);
-    }
+    // Lees de volledige zin altijd voor zodra hij afgerond is.
+    console.log(
+      "[TTS] Finalize: volledige vertaling wordt voorgelezen:",
+      cleaned.translation.substring(0, 50) + (cleaned.translation.length > 50 ? "..." : "")
+    );
+    spreekVertaling(cleaned.translation, targetLanguageSelect.value);
   } else {
     if (textOnlyCheckbox.checked) {
       console.log("[TTS] Overgeslagen: text-only modus actief (no voice)");
@@ -572,19 +570,6 @@ async function spreekVertaling(text, lang) {
     console.log("[TTS] Geen tekst om voor te lezen");
     return;
   }
-
-  // Duplicate detection: voorkom dat dezelfde zin meer dan 2 keer wordt voorgelezen
-  const normalizedText = trimmed.toLowerCase().trim();
-  const count = spokenSentences.get(normalizedText) || 0;
-  
-  if (count >= 2) {
-    console.log(`[TTS] ⚠️ Zin al ${count} keer voorgelezen, overslaan: "${trimmed.substring(0, 50)}..."`);
-    return;
-  }
-  
-  // Verhoog teller
-  spokenSentences.set(normalizedText, count + 1);
-  console.log(`[TTS] Zin wordt voorgelezen (${count + 1}/2): "${trimmed.substring(0, 50)}${trimmed.length > 50 ? '...' : ''}"`);
 
   console.log(`[TTS] Vraag audio aan voor: "${trimmed.substring(0, 50)}${trimmed.length > 50 ? '...' : ''}" (taal: ${lang})`);
 
@@ -1222,7 +1207,6 @@ if (startButton) {
     isSpeaking = false;
     resetPendingSentence();
     sessionSegments = [];
-    spokenSentences.clear(); // Reset duplicate tracking bij nieuwe sessie
     renderLatestSegments();
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
