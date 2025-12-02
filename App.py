@@ -6,6 +6,7 @@ import unicodedata
 from dataclasses import asdict, dataclass
 from typing import Optional
 from types import SimpleNamespace
+from pathlib import Path
 from openai import OpenAI
 import deepl
 from dotenv import load_dotenv
