@@ -32,6 +32,7 @@ let pendingSilenceFlush = false;
 let pendingSentence = null;
 let ttsAudioElement = null;
 let ttsAudioObjectUrl = null;
+let audioContextUnlocked = false; // Track of audio context is "unlocked" door gebruikersinteractie
 
 const micStatusElement = document.getElementById("micStatus");
 const startButton = document.getElementById("start");
@@ -597,6 +598,57 @@ function stopTtsAudio() {
   }
 }
 
+// Unlock audio context door een korte stilte te spelen (na gebruikersinteractie)
+async function unlockAudioContext() {
+  if (audioContextUnlocked) {
+    return; // Al unlocked
+  }
+  
+  const audioEl = ensureTtsAudioElement();
+  
+  // Maak een minimale stille WAV file (geldige WAV header + 1 sample stilte)
+  // Dit is een correcte WAV file met 44 bytes header + 2 bytes data (1 mono 16-bit sample)
+  const wavHeader = new Uint8Array([
+    0x52, 0x49, 0x46, 0x46, // "RIFF"
+    0x2E, 0x00, 0x00, 0x00, // File size - 8 (46 - 8 = 38 = 0x26, maar we gebruiken 0x2E voor veiligheid)
+    0x57, 0x41, 0x56, 0x45, // "WAVE"
+    0x66, 0x6D, 0x74, 0x20, // "fmt "
+    0x10, 0x00, 0x00, 0x00, // Subchunk1Size (16)
+    0x01, 0x00,             // AudioFormat (PCM)
+    0x01, 0x00,             // NumChannels (mono)
+    0x44, 0xAC, 0x00, 0x00, // SampleRate (44100)
+    0x88, 0x58, 0x01, 0x00, // ByteRate (44100 * 2)
+    0x02, 0x00,             // BlockAlign (2)
+    0x10, 0x00,             // BitsPerSample (16)
+    0x64, 0x61, 0x74, 0x61, // "data"
+    0x02, 0x00, 0x00, 0x00, // Subchunk2Size (2 bytes)
+    0x00, 0x00              // Data (stilte: 0x0000)
+  ]);
+  
+  try {
+    const silentBlob = new Blob([wavHeader], { type: 'audio/wav' });
+    const url = URL.createObjectURL(silentBlob);
+    audioEl.src = url;
+    audioEl.volume = 0.001; // Zeer zacht (bijna onhoorbaar)
+    
+    const playPromise = audioEl.play();
+    if (playPromise) {
+      await playPromise;
+      // Wacht even zodat de browser de audio echt start en unlocked
+      await new Promise(resolve => setTimeout(resolve, 100));
+      audioEl.pause();
+      audioEl.currentTime = 0;
+      audioEl.src = ""; // Reset
+      URL.revokeObjectURL(url);
+      audioContextUnlocked = true;
+      console.log("[TTS] ✅ Audio context unlocked via gebruikersinteractie");
+    }
+  } catch (error) {
+    console.warn("[TTS] Kon audio context niet unlocken:", error);
+    // Als het mislukt, probeer het opnieuw bij de volgende TTS call
+  }
+}
+
 function playTtsBlob(blob, lang) {
   const audioEl = ensureTtsAudioElement();
 
@@ -638,27 +690,32 @@ function playTtsBlob(blob, lang) {
     audioEl.oncanplaythrough = () => console.log("[TTS] ✅ Audio volledig geladen");
   }
 
-  // Probeer af te spelen - met meerdere retries voor betrouwbaarheid
-  const attemptPlay = (retries = 3) => {
+  // Probeer af te spelen - met unlock check
+  const attemptPlay = async (retries = 2) => {
+    // Als audio context nog niet unlocked is, probeer het eerst te unlocken
+    if (!audioContextUnlocked) {
+      await unlockAudioContext();
+    }
+    
     const playPromise = audioEl.play();
     if (playPromise && typeof playPromise.catch === "function") {
       playPromise
         .then(() => {
           console.log("[TTS] ✅ Audio afspelen succesvol gestart");
+          audioContextUnlocked = true; // Markeer als unlocked na succesvolle play
         })
         .catch((error) => {
-          console.error(`[TTS] ❌ Kon audio niet afspelen (poging ${4 - retries}/3):`, error.name, error.message);
+          console.error(`[TTS] ❌ Kon audio niet afspelen (poging ${3 - retries}/2):`, error.name, error.message);
           // Browser autoplay policy might block this - user interaction required
           if (error.name === "NotAllowedError" && retries > 0) {
             console.warn("[TTS] ⚠️ Browser blokkeert autoplay, probeer opnieuw...");
-            // Probeer opnieuw met toenemende delay
+            // Probeer opnieuw met delay
             setTimeout(() => {
               attemptPlay(retries - 1);
-            }, 200 * (4 - retries));
+            }, 300);
           } else if (error.name === "NotAllowedError") {
-            console.error("[TTS] ❌ Autoplay definitief geblokkeerd - klik ergens op de pagina om audio te activeren");
-            // Toon visuele waarschuwing aan gebruiker
-            alert("⚠️ Browser blokkeert automatisch afspelen. Klik ergens op de pagina en probeer opnieuw.");
+            console.error("[TTS] ❌ Autoplay definitief geblokkeerd");
+            // Geen alert meer - gebruiker heeft al op start geklikt, dit zou niet moeten gebeuren
           } else {
             console.error("[TTS] ❌ Onbekende audio fout:", error);
           }
@@ -668,10 +725,11 @@ function playTtsBlob(blob, lang) {
       console.log("[TTS] ⚠️ play() geeft geen promise terug, probeer direct af te spelen");
       try {
         audioEl.play();
+        audioContextUnlocked = true;
       } catch (e) {
         console.error("[TTS] ❌ Direct play() mislukt:", e);
         if (retries > 0) {
-          setTimeout(() => attemptPlay(retries - 1), 200);
+          setTimeout(() => attemptPlay(retries - 1), 300);
         }
       }
     }
@@ -1356,6 +1414,12 @@ if (startButton) {
 
       const options = getRecorderOptions();
       initializeMediaRecorder(stream, options);
+
+      // Unlock audio context direct na gebruikersinteractie (start button click)
+      // Dit zorgt ervoor dat TTS later zonder problemen kan afspelen
+      unlockAudioContext().catch(err => {
+        console.warn("[TTS] Kon audio context niet unlocken bij start:", err);
+      });
 
       // Knoppen togglen
       startButton.disabled = true;
