@@ -227,6 +227,8 @@ BLACKLIST_TOKEN_COMBOS = [
     ("ondertiteling", "canada"),
 ]
 
+_LAST_SPEAKER_TIMESTAMP: Optional[float] = None
+
 
 _SUBSCRIPTION_REPLACEMENTS = None
 
@@ -1386,32 +1388,52 @@ def vertaal_audio():
                 }
             )
 
-        # Check if detected language matches interpreter language - if so, ignore this transcription
+        # Check of dit segment waarschijnlijk van de tolk is
         if interpreter_lang_hint:
             detected_language = None
-            # Try to get language from response (OpenAI API returns it as attribute)
             if hasattr(transcript_response, "language"):
                 detected_language = transcript_response.language
             elif isinstance(transcript_response, dict):
                 detected_language = transcript_response.get("language")
-            
-            # Normalize detected language for comparison
+
+            is_interpreter_segment = False
+
+            # 1) Sterke filter: taal van segment = taal van tolk
             if detected_language:
                 detected_lang_normalized = detected_language.lower().strip()
                 interpreter_lang_normalized = interpreter_lang_hint.lower().strip()
-                
-                # Check if detected language matches interpreter language
                 if detected_lang_normalized == interpreter_lang_normalized:
-                    print(f"[i] Gedetecteerde taal ({detected_language}) komt overeen met tolk-taal ({interpreter_lang}), transcriptie genegeerd.")
-                    return jsonify(
-                        {
-                            "recognized": "",
-                            "corrected": "",
-                            "translation": "",
-                            "silenceDetected": True,
-                            "interpreterFiltered": True,
-                        }
-                    )
+                    is_interpreter_segment = True
+            
+            # 2) Extra heuristiek op basis van timing/frequentie
+            #    Als er geen taalinfo is of die onbetrouwbaar lijkt, gebruik het interval.
+            global _LAST_SPEAKER_TIMESTAMP
+            now_ts = time.time()
+            if not is_interpreter_segment and _LAST_SPEAKER_TIMESTAMP is not None:
+                delta = now_ts - _LAST_SPEAKER_TIMESTAMP
+                # Korte, blokkerige zinnen vlak na elkaar zijn vaak tolk-fragmenten.
+                # We filteren alleen heel korte fragmenten om echte content niet kwijt te raken.
+                word_count = len(ruwe_tekst.split())
+                if 0.3 <= delta <= 4.0 and word_count <= 8:
+                    is_interpreter_segment = True
+
+            if is_interpreter_segment:
+                print(
+                    f"[i] Segment gefilterd als tolk-fragment "
+                    f"(interpreter_lang={interpreter_lang_hint}, detected={detected_language})"
+                )
+                return jsonify(
+                    {
+                        "recognized": "",
+                        "corrected": "",
+                        "translation": "",
+                        "silenceDetected": True,
+                        "interpreterFiltered": True,
+                    }
+                )
+            else:
+                # Dit beschouwen we als spreker; update referentietijd
+                _LAST_SPEAKER_TIMESTAMP = now_ts
 
         tekst = verwijder_ongewenste_transcripties(ruwe_tekst)
 
