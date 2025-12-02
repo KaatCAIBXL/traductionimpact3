@@ -228,6 +228,61 @@ BLACKLIST_TOKEN_COMBOS = [
 ]
 
 
+def _apply_subscription_corrections(tekst: str) -> str:
+    """
+    Pas vaste woord-/zinsniveaucorrecties toe vóór de AI-correctie.
+
+    Deze functie is bedoeld voor veelvoorkomende fouten in ondertitels /
+    transcripties (bijv. namen of bijbelse termen) die we altijd op een
+    vaste manier willen herschrijven nog vóór GPT-contextcorrectie.
+
+    Let op:
+    - De vervangingen zijn *case‑gevoelig* en worden alleen toegepast
+      op exacte woord-/zinsdelen.
+    - Sommige varianten (bijv. 'pape' en 'Pape') staan daarom elk apart
+      in de lijst.
+    """
+
+    if not tekst:
+        return tekst
+
+    # 'mogelijke fouten' -> 'correctie'
+    vervangingen = [
+        ("pape", "Pasteur Anaclet"),
+        ("Pape", "Pasteur Anaclet"),
+        ("passeur", "pasteur"),
+        ("à la clé", "Anaclat"),
+        ("anacaap", "Anaclat"),
+        ("Anacaap", "Anaclat"),
+        ("Aposodic", "Apostolique"),
+        ("cette tombe de Dieu", "cet homme de Dieu"),
+        ("la piscine de silhouette", "la piscine de Siloé"),
+        ("Sarah", "Chara"),
+        ("Sara", "Chara"),
+        ("Beta", "BETACH"),
+        ("bèta", "BETACH"),
+        ("bêta", "BETACH"),
+        ("Bêta", "BETACH"),
+        ("Betah", "BETACH"),
+        ("Béthane", "BETACH"),
+        ("Béthame", "BETACH"),
+        ("d'Ecky", "de Bétach"),
+        ("D'Ecky", "de Bétach"),
+        ("enchantement", "changement"),
+    ]
+
+    # Langste patronen eerst, zodat langere zinsdelen voorrang krijgen.
+    vervangingen.sort(key=lambda item: len(item[0]), reverse=True)
+
+    resultaat = tekst
+    for fout, correct in vervangingen:
+        # Gebruik woordgrenzen zodat we geen delen van langere woorden vervangen.
+        patroon = re.compile(rf"\b{re.escape(fout)}\b")
+        resultaat = patroon.sub(correct, resultaat)
+
+    return resultaat
+
+
 def _contains_emoji(tekst: str) -> bool:
     """Check if text contains any emoji characters."""
     # Emoji ranges in Unicode
@@ -760,6 +815,8 @@ def transcribe_audio():
 
         ruwe_tekst = transcript_response.text.strip()
         tekst = verwijder_ongewenste_transcripties(ruwe_tekst)
+        # Eerste laag: vaste woord-/zinscorrecties (subscription-correcties)
+        tekst = _apply_subscription_corrections(tekst)
 
         if not tekst:
             return jsonify(
@@ -1337,6 +1394,8 @@ def vertaal_audio():
 
         # ✍️ Contextuele correctie
         if tekst:
+            # Eerste laag: vaste woord-/zinscorrecties vóór GPT
+            tekst = _apply_subscription_corrections(tekst)
             verbeterde_zin = corrigeer_zin_met_context(tekst, vorige_zinnen)
             verbeterde_zin = verwijder_ongewenste_transcripties(verbeterde_zin)
             vorige_zinnen.append(verbeterde_zin)
