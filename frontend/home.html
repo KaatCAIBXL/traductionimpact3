@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Video Translator – Home</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #050816;
+      --bg-alt: #0b1020;
+      --accent: #6366f1;
+      --accent-soft: rgba(99, 102, 241, 0.12);
+      --accent-strong: rgba(129, 140, 248, 0.3);
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --border: #1f2937;
+      --danger: #f97373;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at top left, #0f172a 0, #020617 55%, #000 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: 1080px;
+      border-radius: 24px;
+      padding: 28px 28px 24px;
+      background: linear-gradient(145deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.96));
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow:
+        0 28px 80px rgba(15, 23, 42, 0.9),
+        0 0 0 1px rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(22px);
+    }
+
+    .shell-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 0, #e5e7eb 0, #4f46e5 36%, #0ea5e9 70%, #020617 100%);
+      box-shadow:
+        0 0 0 2px rgba(15, 23, 42, 0.7),
+        0 0 32px rgba(59, 130, 246, 0.65);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .brand-logo::after {
+      content: "";
+      position: absolute;
+      inset: 32%;
+      border-radius: inherit;
+      background: radial-gradient(circle at 30% 10%, rgba(248, 250, 252, 0.9), transparent 55%);
+      opacity: 0.6;
+    }
+
+    .brand-text h1 {
+      font-size: 20px;
+      margin: 0;
+      letter-spacing: 0.03em;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .brand-text h1 span.primary {
+      font-weight: 600;
+      background: linear-gradient(120deg, #e5e7eb, #c7d2fe);
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+
+    .brand-text h1 span.secondary {
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+    }
+
+    .brand-text p {
+      margin: 3px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .status-pill {
+      padding: 6px 11px;
+      border-radius: 999px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(15, 23, 42, 0.7);
+    }
+
+    .status-pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
+    }
+
+    .shell-main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    @media (max-width: 800px) {
+      .shell {
+        padding: 22px 18px 18px;
+      }
+      .shell-main {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .shell-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+
+    .hero {
+      padding-right: 10px;
+    }
+
+    .hero-title {
+      font-size: 26px;
+      font-weight: 600;
+      margin: 0 0 6px;
+      letter-spacing: 0.02em;
+    }
+
+    .hero-title span.accent {
+      background: linear-gradient(120deg, #a5b4fc, #38bdf8);
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+
+    .hero-subtitle {
+      margin: 0 0 18px;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 460px;
+    }
+
+    .hero-subtitle strong {
+      color: #e5e7eb;
+      font-weight: 500;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    @media (max-width: 640px) {
+      .hero-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .hero-callout {
+      padding: 12px 14px;
+      border-radius: 18px;
+      background: radial-gradient(circle at 0 0, rgba(56, 189, 248, 0.16), transparent 55%), rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.38);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.8);
+    }
+
+    .hero-callout-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .hero-callout-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+
+    .hero-callout-title span {
+      color: #e5e7eb;
+    }
+
+    .hero-callout-text {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0 0 10px;
+    }
+
+    .hero-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .hero-badge {
+      font-size: 11px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .hero-badge-pill {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #38bdf8;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+    }
+
+    .hero-stats {
+      padding: 11px 13px;
+      border-radius: 16px;
+      background: radial-gradient(circle at 100% 0, rgba(129, 140, 248, 0.3), transparent 55%),
+                  rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px 12px;
+      font-size: 12px;
+    }
+
+    .hero-stat-label {
+      color: var(--muted);
+    }
+
+    .hero-stat-value {
+      color: #e5e7eb;
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .modules {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .tiles {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    @media (max-width: 600px) {
+      .tiles {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .tile {
+      position: relative;
+      border-radius: 18px;
+      padding: 14px 14px 13px;
+      background: radial-gradient(circle at 0 0, var(--accent-soft), transparent 50%),
+                  rgba(15, 23, 42, 0.96);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      cursor: pointer;
+      text-align: left;
+      transition:
+        transform 0.16s ease,
+        box-shadow 0.16s ease,
+        border-color 0.16s ease,
+        background 0.16s ease;
+    }
+
+    .tile-main {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .tile:hover {
+      transform: translateY(-2px);
+      box-shadow:
+        0 18px 40px rgba(15, 23, 42, 0.9),
+        0 0 0 1px rgba(129, 140, 248, 0.85);
+      border-color: rgba(129, 140, 248, 0.9);
+      background: radial-gradient(circle at 0 0, var(--accent-strong), transparent 55%),
+                  rgba(15, 23, 42, 0.98);
+    }
+
+    .tile.is-disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+      border-style: dashed;
+      border-color: rgba(75, 85, 99, 0.8);
+      background: radial-gradient(circle at 0 0, rgba(55, 65, 81, 0.6), transparent 55%),
+                  rgba(15, 23, 42, 0.96);
+      box-shadow: none;
+      transform: none;
+    }
+
+    .tile-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+
+    .tile-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0 0 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #e5e7eb;
+    }
+
+    .pill-live {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(34, 197, 94, 0.2);
+      border: 1px solid rgba(34, 197, 94, 0.8);
+      color: #bbf7d0;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .pill-beta {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(234, 179, 8, 0.16);
+      border: 1px solid rgba(234, 179, 8, 0.8);
+      color: #facc15;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .pill-admin {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.16);
+      border: 1px solid rgba(148, 163, 184, 0.9);
+      color: #e5e7eb;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .tile-text {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .tile-meta {
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .tile-meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .tile-kbd {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      color: #e5e7eb;
+      background: rgba(15, 23, 42, 0.8);
+    }
+
+    .tile-icon-wrap {
+      font-size: 20px;
+      opacity: 0.9;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+    }
+
+    .helper {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed rgba(55, 65, 81, 0.9);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .helper strong {
+      color: #e5e7eb;
+      font-weight: 500;
+    }
+
+    .helper span.badge {
+      padding: 4px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .helper span.badge span {
+      color: #a5b4fc;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="shell-header">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true"></div>
+        <div class="brand-text">
+          <h1>
+            <span class="primary">Video‑Translator</span>
+            <span class="secondary">LIVE · TEACH · ADMIN</span>
+          </h1>
+          <p>Één ingang. Drie modules. Live vertalen, onderwijscontent en beheer.</p>
+        </div>
+      </div>
+      <div>
+        <div class="status-pill" aria-label="Platform status: operational">
+          <span class="status-pill-dot"></span>
+          PLATFORM ONLINE
+        </div>
+      </div>
+    </div>
+
+    <div class="shell-main">
+      <section class="hero" aria-label="Introductie">
+        <h2 class="hero-title">
+          Kies je <span class="accent">werkmodus</span> om te starten.
+        </h2>
+        <p class="hero-subtitle">
+          Gebruik <strong>Live translator</strong> voor real‑time vertaling met microfoon,
+          <strong>Les saints du MAI</strong> voor onderwijs‑/bijbelcontent
+          en <strong>I‑tech privé</strong> voor experimentele tools.
+        </p>
+
+        <div class="hero-grid">
+          <article class="hero-callout" aria-label="Aanbevolen">
+            <div class="hero-callout-label">Aanbevolen voor live gebruik</div>
+            <h3 class="hero-callout-title">
+              Live translator <span>(real‑time tolkmodus)</span>
+            </h3>
+            <p class="hero-callout-text">
+              Start direct een live sessie met microfoon, automatische transcriptie,
+              contextuele correctie en fluister‑vertaling naar de gekozen taal.
+            </p>
+            <div class="hero-badges">
+              <span class="hero-badge">
+                <span class="hero-badge-pill"></span>
+                Optimized for speech
+              </span>
+              <span class="hero-badge">
+                🎙️ Microfoon + TTS
+              </span>
+              <span class="hero-badge">
+                🌍 Multi‑language
+              </span>
+            </div>
+          </article>
+
+          <aside class="hero-stats" aria-label="Korte status">
+            <div class="hero-stat-label">Live vertaler</div>
+            <div class="hero-stat-value">Productierijp</div>
+            <div class="hero-stat-label">Les saints du MAI</div>
+            <div class="hero-stat-value">In opbouw</div>
+            <div class="hero-stat-label">I‑tech privé</div>
+            <div class="hero-stat-value">Lab / experimenteel</div>
+            <div class="hero-stat-label">Admin</div>
+            <div class="hero-stat-value">Alleen voor beheerders</div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="modules" aria-label="Modules">
+        <div class="tiles" aria-label="Hoofdmodules">
+          <article class="tile" id="tile-live-translator" tabindex="0" role="button" aria-label="Open Live translator">
+            <div class="tile-main">
+              <div>
+                <div class="tile-label">Module 1</div>
+                <h3 class="tile-title">
+                  🎧 Live translator
+                  <span class="pill-live">Live</span>
+                </h3>
+                <p class="tile-text">
+                  Real‑time microfoonvertaling met Whisper, DeepL en TTS. Perfect voor
+                  conferenties, kerkdiensten en simultaanvertaling.
+                </p>
+                <div class="tile-meta">
+                  <span>Direct starten · microfoon vereist</span>
+                  <span><span class="tile-kbd">Enter</span></span>
+                </div>
+              </div>
+              <div class="tile-icon-wrap" aria-hidden="true">⏱️</div>
+            </div>
+          </article>
+
+          <article class="tile" id="tile-saints" tabindex="0" role="button" aria-label="Open Les saints du MAI">
+            <div class="tile-main">
+              <div>
+                <div class="tile-label">Module 2</div>
+                <h3 class="tile-title">
+                  📖 Les saints du MAI
+                  <span class="pill-beta">Soon</span>
+                </h3>
+                <p class="tile-text">
+                  Bibliotheek met onderwijs‑ en bijbelcontent, vertalingen en mogelijke
+                  lessenreeksen. Deze module wordt stap voor stap uitgerold.
+                </p>
+                <div class="tile-meta">
+                  <span>Contentplatform in voorbereiding</span>
+                  <span><span class="tile-kbd">S</span></span>
+                </div>
+              </div>
+              <div class="tile-icon-wrap" aria-hidden="true">✨</div>
+            </div>
+          </article>
+
+          <article class="tile" id="tile-itech" tabindex="0" role="button" aria-label="Open I‑tech privé labomgeving">
+            <div class="tile-main">
+              <div>
+                <div class="tile-label">Module 3</div>
+                <h3 class="tile-title">
+                  🧪 I‑tech privé
+                  <span class="pill-beta">Lab</span>
+                </h3>
+                <p class="tile-text">
+                  Experimentele AI‑tools en interne projecten. Ideaal om nieuwe ideeën
+                  te testen voordat ze publiek gaan.
+                </p>
+                <div class="tile-meta">
+                  <span>Alleen voor interne testen</span>
+                  <span><span class="tile-kbd">I</span></span>
+                </div>
+              </div>
+              <div class="tile-icon-wrap" aria-hidden="true">⚙️</div>
+            </div>
+          </article>
+
+          <article class="tile" id="tile-admin" tabindex="0" role="button" aria-label="Open adminomgeving (placeholder)">
+            <div class="tile-main">
+              <div>
+                <div class="tile-label">Module 4</div>
+                <h3 class="tile-title">
+                  🛡️ Admin
+                  <span class="pill-admin">Restricted</span>
+                </h3>
+                <p class="tile-text">
+                  Centraal beheer voor gebruikers, rechten, logging en statistieken.
+                  Alleen toegankelijk voor beheerders met de juiste rol.
+                </p>
+                <div class="tile-meta">
+                  <span>Role‑based access</span>
+                  <span><span class="tile-kbd">A</span></span>
+                </div>
+              </div>
+              <div class="tile-icon-wrap" aria-hidden="true">📊</div>
+            </div>
+          </article>
+        </div>
+
+        <div class="helper">
+          <span>
+            <strong>Tip:</strong> gebruik <strong>Live translator</strong> als eerste module;
+            de andere modules kun je later technisch aansluiten als aparte services.
+          </span>
+          <span class="badge">
+            ARCHITECTUUR · <span>MULTI‑SERVICE</span>
+          </span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const bindTile = (id, href) => {
+        const tile = document.getElementById(id);
+        if (!tile) return;
+        const navigate = () => {
+          window.location.href = href;
+        };
+        tile.addEventListener("click", navigate);
+        tile.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            navigate();
+          }
+        });
+      };
+
+      bindTile("tile-live-translator", "/live-translator");
+      bindTile("tile-saints", "/saints");
+      bindTile("tile-itech", "/itech");
+      bindTile("tile-admin", "/admin");
+    })();
+  </script>
+</body>
+</html>
+
+

@@ -30,7 +30,9 @@ except ImportError:
 
 
 # --------------------------------this is for an app configuration and the needed apikeys
-app = Flask("traductionimpact3")
+# Hernoemd naar 'live-translator-service' zodat deze codebase duidelijk de
+# live vertaler service vertegenwoordigt binnen een grotere architectuur.
+app = Flask("live-translator-service")
 CORS(app)
 load_dotenv()
 
@@ -526,14 +528,54 @@ def select_gpt_translation_model(target_language: Optional[str]) -> str:
         return GPT_TRANSLATION_MODEL_OVERRIDES[key]
     return DEFAULT_GPT_TRANSLATION_MODEL
 
-# ---------------------------------------------------------------------home page
+# ---------------------------------------------------------------------home page & frontend routing
+
+# Voorwaartse compatibiliteit:
+# - De bestaande root ('/') blijft de live vertaler tonen.
+# - Daarnaast introduceren we een expliciete '/live-translator' namespace,
+#   zodat deze service later netjes kan worden opgenomen in een grotere
+#   "video-translator" frontend met meerdere modules.
 
 @app.route("/")
 def index():
-    return send_from_directory("frontend", "index.html")
+    """Hoofdingang van de applicatie: toon het centrale keuzescherm met modules."""
+    return send_from_directory("frontend", "home.html")
+
+
 @app.route("/<path:path>")
 def static_files(path):
+    """Algemene statische assets vanuit de frontend-map (CSS, JS, images, etc.)."""
     return send_from_directory("frontend", path)
+
+
+@app.route("/live-translator")
+def live_translator_index():
+    """Expliciete route voor de live-translator module."""
+    return send_from_directory("frontend", "index.html")
+
+
+@app.route("/live-translator/<path:path>")
+def live_translator_static(path):
+    """Statische assets voor de live-translator module onder /live-translator."""
+    return send_from_directory("frontend", path)
+
+
+@app.route("/saints")
+def saints_home():
+    """Placeholderpagina voor de Les saints du MAI module."""
+    return send_from_directory("frontend", "saints.html")
+
+
+@app.route("/itech")
+def itech_home():
+    """Placeholderpagina voor de I-tech privé module."""
+    return send_from_directory("frontend", "itech.html")
+
+
+@app.route("/admin")
+def admin_home():
+    """Placeholderpagina voor de adminmodule (later koppelen aan auth/rollen)."""
+    return send_from_directory("frontend", "admin.html")
 
 
 
