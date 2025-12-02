@@ -18,14 +18,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Kopieer projectbestanden
 COPY . .
 
+# Opruimen (voor ENTRYPOINT)
+RUN rm -rf /root/.cache /tmp/* /var/cache/*
+
 # Stel poort in
 EXPOSE 8080
 
 # Start de app
 ENTRYPOINT ["python", "App.py"]
-
-# Opruimen (optioneel, maar niet dubbel)
-RUN rm -rf /root/.cache /tmp/* /var/cache/*
 
 
 
