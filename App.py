@@ -1503,6 +1503,11 @@ def vertaal_audio():
                     )
                     vertaling = response.choices[0].message.content.strip()
 
+            # Zorg dat er ALTIJD een vertaling is zodra er een (gecorrigeerde) zin is.
+            # Als alle vertaalpogingen mislukken of een lege string teruggeven,
+            # gebruiken we de gecorrigeerde zin als fallback.
+            if not vertaling or not vertaling.strip():
+                vertaling = verbeterde_zin
             else:
                 # Fallback naar GPT voor andere niet-DeepL talen
                 prompt = f"Vertaal deze zin van {bron_taal} naar {doel_taal}: {verbeterde_zin}"

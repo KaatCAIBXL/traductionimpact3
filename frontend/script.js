@@ -282,16 +282,11 @@ function renderLatestSegments() {
     return;
   }
 
-  // Start with all segments, but we'll trim if needed
-  let segmentsToShow = [...sessionSegments];
-  
-  // Build HTML for all segments
+  // Bouw HTML voor alle segmenten (we verwijderen GEEN oude items meer,
+  // zodat het downloadbestand altijd de volledige sessie bevat).
   let html = "";
-  
-  // Render segments in reverse order (newest first, but we'll reverse the array)
-  // Actually, let's show oldest first (as user requested: "transcriptie van de vorige zin/deel")
-  for (let i = 0; i < segmentsToShow.length; i++) {
-    const segment = segmentsToShow[i];
+  for (let i = 0; i < sessionSegments.length; i++) {
+    const segment = sessionSegments[i];
     const hasContent = (segment.recognized && segment.recognized.trim()) ||
                       (segment.corrected && segment.corrected.trim()) ||
                       (segment.translation && segment.translation.trim());
@@ -318,28 +313,13 @@ function renderLatestSegments() {
   }
   
   transcriptContainer.innerHTML = html;
-  
-  // Check if container is too full and remove oldest segments if needed
-  // We'll check the scroll height vs client height
-  // If it's significantly larger, we'll remove the oldest segments
+
+  // Altijd automatisch naar beneden scrollen zodat de nieuwste tekst zichtbaar is,
+  // maar we houden ALLE vorige segmenten in het geheugen voor de download.
   setTimeout(() => {
     const container = transcriptContainer;
     if (!container) return;
-    
-    const scrollHeight = container.scrollHeight;
-    const clientHeight = container.clientHeight;
-    const maxVisibleHeight = window.innerHeight * 0.7; // 70vh equivalent
-    
-    // If content is more than 1.5x the max visible area, start removing oldest segments
-    if (scrollHeight > maxVisibleHeight * 1.5 && sessionSegments.length > 1) {
-      // Remove the oldest segment
-      sessionSegments.shift();
-      // Re-render with fewer segments
-      renderLatestSegments();
-    } else {
-      // Auto-scroll to bottom to show newest content
-      container.scrollTop = container.scrollHeight;
-    }
+    container.scrollTop = container.scrollHeight;
   }, 10);
 }
 
