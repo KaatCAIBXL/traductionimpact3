@@ -185,14 +185,50 @@ function queueSegmentForOutput(segment) {
     return;
   }
 
-  // Check voor duplicaten: als deze transcriptie al eerder is gezien, overslaan
-  if (isDuplicateTranscription(segment.recognized || "", segment.corrected || "")) {
-    console.log("[Dedup] Duplicaat transcriptie gedetecteerd en overgeslagen:", 
+  // Check voor duplicaten: als deze transcriptie al eerder is gezien, skip alleen de transcriptie/correctie
+  // MAAR laat vertaling en TTS wel doorgaan (want die kan nieuw zijn)
+  const isDuplicate = isDuplicateTranscription(segment.recognized || "", segment.corrected || "");
+  
+  if (isDuplicate) {
+    console.log("[Dedup] Duplicaat transcriptie gedetecteerd, skip transcriptie maar behoud vertaling:", 
       (segment.recognized || segment.corrected || "").substring(0, 50) + "...");
-    return;
+    
+    // Als het een duplicaat is, gebruik alleen de vertaling (geen transcriptie/correctie)
+    const translationOnlySegment = {
+      recognized: "",
+      corrected: "",
+      translation: segment.translation || "",
+      silenceDetected: segment.silenceDetected || false,
+      forceFinalize: segment.forceFinalize || false,
+    };
+    
+    // TTS altijd aanroepen als er een vertaling is (ook bij duplicaten)
+    if (!textOnlyCheckbox.checked && translationOnlySegment.translation && translationOnlySegment.translation.trim()) {
+      console.log("[TTS] Duplicaat maar nieuwe vertaling, start voorlezen:", translationOnlySegment.translation.substring(0, 50) + "...");
+      spreekVertaling(translationOnlySegment.translation, targetLanguageSelect.value);
+    }
+    
+    // Skip verdere verwerking van transcriptie/correctie, maar laat finalize wel gebeuren als er een vertaling is
+    if (translationOnlySegment.translation && translationOnlySegment.translation.trim()) {
+      if (!pendingSentence) {
+        pendingSentence = translationOnlySegment;
+      } else {
+        pendingSentence.translation = textJoin(pendingSentence.translation, translationOnlySegment.translation);
+      }
+      
+      // Finalize als zin compleet is
+      if (
+        sentenceLooksComplete(translationOnlySegment.translation) ||
+        segment.forceFinalize
+      ) {
+        finalizePendingSentence(Boolean(segment.forceFinalize));
+      }
+    }
+    
+    return; // Stop hier, we hebben alleen de vertaling verwerkt
   }
   
-  // Voeg toe aan geziene transcripties
+  // Voeg toe aan geziene transcripties (alleen als het geen duplicaat is)
   const normalizedRecognized = normalizeTextForDedup(segment.recognized || "");
   const normalizedCorrected = normalizeTextForDedup(segment.corrected || "");
   if (normalizedRecognized) {
@@ -218,6 +254,8 @@ function queueSegmentForOutput(segment) {
     spreekVertaling(segment.translation, targetLanguageSelect.value);
   } else if (textOnlyCheckbox.checked) {
     console.log("[TTS] Overgeslagen: text-only modus actief (no voice)");
+  } else if (!segment.translation || !segment.translation.trim()) {
+    console.log("[TTS] Overgeslagen: geen vertaling beschikbaar in segment");
   }
 
   // Finalize alleen als zin compleet is of geforceerd moet worden
@@ -541,7 +579,11 @@ function ensureTtsAudioElement() {
   ttsAudioElement = document.createElement("audio");
   ttsAudioElement.id = "ttsPlayer";
   ttsAudioElement.preload = "auto";
-  ttsAudioElement.style.display = "none";
+  ttsAudioElement.style.position = "absolute";
+  ttsAudioElement.style.left = "-9999px"; // Off-screen maar niet display:none (beter voor autoplay)
+  ttsAudioElement.style.width = "1px";
+  ttsAudioElement.style.height = "1px";
+  ttsAudioElement.setAttribute("autoplay", "true"); // Probeer autoplay te forceren
   document.body.appendChild(ttsAudioElement);
   return ttsAudioElement;
 }
@@ -596,35 +638,46 @@ function playTtsBlob(blob, lang) {
     audioEl.oncanplaythrough = () => console.log("[TTS] ✅ Audio volledig geladen");
   }
 
-  // Probeer af te spelen
-  const playPromise = audioEl.play();
-  if (playPromise && typeof playPromise.catch === "function") {
-    playPromise
-      .then(() => {
-        console.log("[TTS] ✅ Audio afspelen succesvol gestart");
-      })
-      .catch((error) => {
-        console.error("[TTS] ❌ Kon audio niet afspelen:", error.name, error.message);
-        // Browser autoplay policy might block this - user interaction required
-        if (error.name === "NotAllowedError") {
-          console.warn("[TTS] ⚠️ Browser blokkeert autoplay - klik ergens op de pagina en probeer opnieuw");
-          // Probeer opnieuw na korte delay (soms helpt dit)
-          setTimeout(() => {
-            audioEl.play().catch(e => console.error("[TTS] ❌ Retry ook mislukt:", e));
-          }, 100);
-        } else {
-          console.error("[TTS] ❌ Onbekende audio fout:", error);
+  // Probeer af te spelen - met meerdere retries voor betrouwbaarheid
+  const attemptPlay = (retries = 3) => {
+    const playPromise = audioEl.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise
+        .then(() => {
+          console.log("[TTS] ✅ Audio afspelen succesvol gestart");
+        })
+        .catch((error) => {
+          console.error(`[TTS] ❌ Kon audio niet afspelen (poging ${4 - retries}/3):`, error.name, error.message);
+          // Browser autoplay policy might block this - user interaction required
+          if (error.name === "NotAllowedError" && retries > 0) {
+            console.warn("[TTS] ⚠️ Browser blokkeert autoplay, probeer opnieuw...");
+            // Probeer opnieuw met toenemende delay
+            setTimeout(() => {
+              attemptPlay(retries - 1);
+            }, 200 * (4 - retries));
+          } else if (error.name === "NotAllowedError") {
+            console.error("[TTS] ❌ Autoplay definitief geblokkeerd - klik ergens op de pagina om audio te activeren");
+            // Toon visuele waarschuwing aan gebruiker
+            alert("⚠️ Browser blokkeert automatisch afspelen. Klik ergens op de pagina en probeer opnieuw.");
+          } else {
+            console.error("[TTS] ❌ Onbekende audio fout:", error);
+          }
+        });
+    } else {
+      // Fallback voor oudere browsers
+      console.log("[TTS] ⚠️ play() geeft geen promise terug, probeer direct af te spelen");
+      try {
+        audioEl.play();
+      } catch (e) {
+        console.error("[TTS] ❌ Direct play() mislukt:", e);
+        if (retries > 0) {
+          setTimeout(() => attemptPlay(retries - 1), 200);
         }
-      });
-  } else {
-    // Fallback voor oudere browsers
-    console.log("[TTS] ⚠️ play() geeft geen promise terug, probeer direct af te spelen");
-    try {
-      audioEl.play();
-    } catch (e) {
-      console.error("[TTS] ❌ Direct play() mislukt:", e);
+      }
     }
-  }
+  };
+  
+  attemptPlay();
 }
 
 async function spreekVertaling(text, lang) {
