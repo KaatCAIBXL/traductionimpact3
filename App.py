@@ -1186,9 +1186,49 @@ def _sniff_file_extension(path: str) -> Optional[str]:
 
 
 # -------------------- HOOFDROUTE --------------------
+# Track al geziene transcripties om duplicaten te voorkomen
+_seen_transcriptions = set()
+
+def _normalize_text_for_dedup(text: str) -> str:
+    """Normaliseer tekst voor duplicate detectie."""
+    if not text:
+        return ""
+    import unicodedata
+    normalized = unicodedata.normalize("NFKD", text.lower())
+    # Verwijder leestekens en normaliseer whitespace
+    import re
+    cleaned = re.sub(r"[^\w\s]", "", normalized)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+def _is_duplicate_transcription(recognized: str, corrected: str) -> bool:
+    """Check of deze transcriptie al eerder is gezien."""
+    global _seen_transcriptions
+    
+    norm_recognized = _normalize_text_for_dedup(recognized)
+    norm_corrected = _normalize_text_for_dedup(corrected)
+    
+    if not norm_recognized and not norm_corrected:
+        return False
+    
+    # Check exacte matches
+    if norm_recognized and norm_recognized in _seen_transcriptions:
+        return True
+    if norm_corrected and norm_corrected != norm_recognized and norm_corrected in _seen_transcriptions:
+        return True
+    
+    # Check substring matches (overlap detectie)
+    for seen in _seen_transcriptions:
+        if norm_recognized and len(norm_recognized) > 10 and norm_recognized in seen:
+            return True
+        if norm_corrected and len(norm_corrected) > 10 and norm_corrected in seen:
+            return True
+    
+    return False
+
 @app.route("/api/translate", methods=["POST"])
 def vertaal_audio():
-    global vorige_zinnen
+    global vorige_zinnen, _seen_transcriptions
 
     if "audio" not in request.files:
         return jsonify({"error": "Geen audio ontvangen"}), 400
@@ -1454,6 +1494,28 @@ def vertaal_audio():
             tekst = _apply_subscription_corrections(tekst)
             verbeterde_zin = corrigeer_zin_met_context(tekst, vorige_zinnen)
             verbeterde_zin = verwijder_ongewenste_transcripties(verbeterde_zin)
+            
+            # Check voor duplicaten VOORDAT we toevoegen
+            if _is_duplicate_transcription(tekst, verbeterde_zin):
+                print(f"[Dedup] Duplicaat transcriptie gedetecteerd en overgeslagen: {verbeterde_zin[:50]}...")
+                return jsonify(
+                    {
+                        "recognized": "",
+                        "corrected": "",
+                        "translation": "",
+                        "silenceDetected": True,
+                        "duplicateFiltered": True,
+                    }
+                )
+            
+            # Voeg toe aan geziene transcripties
+            norm_recognized = _normalize_text_for_dedup(tekst)
+            norm_corrected = _normalize_text_for_dedup(verbeterde_zin)
+            if norm_recognized:
+                _seen_transcriptions.add(norm_recognized)
+            if norm_corrected and norm_corrected != norm_recognized:
+                _seen_transcriptions.add(norm_corrected)
+            
             vorige_zinnen.append(verbeterde_zin)
         else:
             verbeterde_zin = ""

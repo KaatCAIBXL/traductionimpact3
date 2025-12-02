@@ -56,9 +56,55 @@ const MIN_UPLOAD_BYTES = 4096;
 const FORCE_RECORDER_RESTART_AFTER_UPLOAD = true;
 const MAX_INIT_SEGMENT_BYTES = 128 * 1024;
 let sessionSegments = [];
+// Track al geziene transcripties om duplicaten te voorkomen
+let seenTranscriptions = new Set();
 
 function resetPendingSentence() {
   pendingSentence = null;
+}
+
+function normalizeTextForDedup(text) {
+  // Normaliseer tekst voor vergelijking: lowercase, verwijder leestekens, trim
+  if (!text) return "";
+  return text.toLowerCase()
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isDuplicateTranscription(recognized, corrected) {
+  // Check of deze transcriptie al eerder is gezien
+  const normalizedRecognized = normalizeTextForDedup(recognized);
+  const normalizedCorrected = normalizeTextForDedup(corrected);
+  
+  // Als beide leeg zijn, geen duplicaat
+  if (!normalizedRecognized && !normalizedCorrected) {
+    return false;
+  }
+  
+  // Check recognized
+  if (normalizedRecognized && seenTranscriptions.has(normalizedRecognized)) {
+    return true;
+  }
+  
+  // Check corrected (als die anders is)
+  if (normalizedCorrected && normalizedCorrected !== normalizedRecognized) {
+    if (seenTranscriptions.has(normalizedCorrected)) {
+      return true;
+    }
+  }
+  
+  // Check of het een substring is van een eerdere transcriptie (overlap detectie)
+  for (const seen of seenTranscriptions) {
+    if (normalizedRecognized && seen.includes(normalizedRecognized) && normalizedRecognized.length > 10) {
+      return true;
+    }
+    if (normalizedCorrected && seen.includes(normalizedCorrected) && normalizedCorrected.length > 10) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 function textJoin(left = "", right = "") {
@@ -137,6 +183,23 @@ function queueSegmentForOutput(segment) {
       finalizePendingSentence(true);
     }
     return;
+  }
+
+  // Check voor duplicaten: als deze transcriptie al eerder is gezien, overslaan
+  if (isDuplicateTranscription(segment.recognized || "", segment.corrected || "")) {
+    console.log("[Dedup] Duplicaat transcriptie gedetecteerd en overgeslagen:", 
+      (segment.recognized || segment.corrected || "").substring(0, 50) + "...");
+    return;
+  }
+  
+  // Voeg toe aan geziene transcripties
+  const normalizedRecognized = normalizeTextForDedup(segment.recognized || "");
+  const normalizedCorrected = normalizeTextForDedup(segment.corrected || "");
+  if (normalizedRecognized) {
+    seenTranscriptions.add(normalizedRecognized);
+  }
+  if (normalizedCorrected && normalizedCorrected !== normalizedRecognized) {
+    seenTranscriptions.add(normalizedCorrected);
   }
 
   if (!pendingSentence) {
@@ -1207,6 +1270,7 @@ if (startButton) {
     isSpeaking = false;
     resetPendingSentence();
     sessionSegments = [];
+    seenTranscriptions.clear(); // Reset duplicate tracking bij nieuwe sessie
     renderLatestSegments();
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
